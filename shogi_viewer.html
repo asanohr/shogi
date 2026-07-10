@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>棋譜ビューア</title>
+</head>
+<body style="margin:0;padding:0;background:#fff;">
+<div id="app" style="font-family:'Hiragino Sans','Yu Gothic',sans-serif;color:#2b2118;padding:16px;">
+<div id="controls" style="margin-bottom:10px;font-size:13px;text-align:center;display:none;">
+<button data-a="first" title="最初へ" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">|&lt;</button> 
+<button data-a="prev" title="1手戻る" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">&lt;</button> 
+<button data-a="stop" title="停止" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">■</button> 
+<button data-a="next" title="1手進む" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">&gt;</button> 
+<button data-a="last" title="最後へ" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">&gt;|</button> 
+<span data-r="counter" style="font-size:13px;min-width:80px;text-align:center;"></span> 
+<button data-a="play" title="自動再生" style="background:#a33b2e;color:#fff;border:1px solid #a33b2e;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">▶ 再生</button> 
+<select data-r="speed" style="font-size:12px;">
+<option value="1500">遅い</option><option value="800" selected>ふつう</option><option value="350">速い</option>
+</select>
+</div>
+<div id="empty-msg" style="font-size:13px;color:#8a4a1c;">表示する棋譜データがありません。URLが正しいかご確認ください。</div>
+<table id="layout-table" style="border-collapse:collapse;margin:0 auto;display:none;"><tr>
+<td data-r="mochi" valign="top" style="vertical-align:top;padding:0 8px 0 0;"></td>
+<td data-r="boardArea" valign="top" style="vertical-align:top;padding:0;"></td>
+<td data-r="movelistWrap" valign="top" style="vertical-align:top;padding:0 0 0 8px;width:200px;display:none;">
+<div style="height:280px;overflow-y:auto;border:1px solid #d8cdb8;border-radius:4px;">
+<table style="width:100%;border-collapse:collapse;font-size:12px;">
+<thead><tr>
+<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;width:24px;"></th>
+<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;">先手</th>
+<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;width:24px;"></th>
+<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;">後手</th>
+</tr></thead>
+<tbody data-r="moveBody"></tbody>
+</table>
+</div>
+</td>
+</tr></table>
+</div>
+<script>
+(function(){
+var KANJI = {FU:"歩",KY:"香",KE:"桂",GI:"銀",KI:"金",KA:"角",HI:"飛",OU:"玉",TO:"と",NY:"成香",NK:"成桂",NG:"成銀",UM:"馬",RY:"龍"};
+var PROMOTED_TYPES = {TO:1,NY:1,NK:1,NG:1,UM:1,RY:1};
+var STACKED_TYPES = {NY:1,NK:1,NG:1};
+var HAND_ORDER = ["HI","KA","KI","GI","KE","KY","FU"];
+var ZEN = "０１２３４５６７８９";
+var KAN = "一二三四五六七八九";
+var CELL_CSS = "border:1px solid #6b4d24;text-align:center;vertical-align:middle;font-size:22px;user-select:none;box-sizing:border-box;width:38px;height:38px;background:#fff;padding:0;";
+var LABEL_CSS = "text-align:center;vertical-align:middle;font-size:14px;color:#5a4a34;box-sizing:border-box;padding:0;border:none;background:#fff;";
+function kanjiNum(n){ if (n<=0) return ""; if (n<=9) return KAN[n-1]; if (n<20) return n===10 ? "十" : ("十" + KAN[n-11]); return String(n); }
+function buildBoardSkeleton(boardAreaEl){
+  boardAreaEl.innerHTML = "";
+  var table = document.createElement("table");
+  table.setAttribute("style", "border-collapse:collapse;background:#fff;");
+  table.setAttribute("cellpadding", "0");
+  table.setAttribute("cellspacing", "0");
+  var cellEls = {};
+  var headRow = document.createElement("tr");
+  for (var f = 9; f >= 1; f--) { var th = document.createElement("td"); th.textContent = ZEN[f]; th.setAttribute("style", LABEL_CSS + "width:38px;height:26px;"); headRow.appendChild(th); }
+  var cornerTd = document.createElement("td"); cornerTd.setAttribute("style", LABEL_CSS + "width:16px;height:26px;"); headRow.appendChild(cornerTd);
+  table.appendChild(headRow);
+  for (var rank = 1; rank <= 9; rank++) {
+    var tr = document.createElement("tr");
+    for (var file = 9; file >= 1; file--) {
+      var cell = document.createElement("td");
+      cell.className = "kse-cell";
+      cell.setAttribute("style", CELL_CSS);
+      tr.appendChild(cell);
+      cellEls[file + "," + rank] = cell;
+    }
+    var rankTd = document.createElement("td"); rankTd.textContent = KAN[rank - 1]; rankTd.setAttribute("style", LABEL_CSS + "width:16px;height:38px;"); tr.appendChild(rankTd);
+    table.appendChild(tr);
+  }
+  boardAreaEl.appendChild(table);
+  return cellEls;
+}
+function paintBoardInto(cellEls, boardMap){
+  for (var key in cellEls) { cellEls[key].innerHTML = ""; cellEls[key].setAttribute("style", CELL_CSS); }
+  for (var k2 in boardMap) {
+    var p = boardMap[k2]; var cell = cellEls[k2]; if (!cell) continue;
+    var span = document.createElement("span");
+    var isPromoted = !!PROMOTED_TYPES[p.type];
+    var pieceCss = "display:inline-block;font-weight:bold;line-height:1;" + (p.emphasis ? "font-family:'Hiragino Sans','Yu Gothic','Meiryo',sans-serif;font-size:26px;" : "font-family:'Yu Mincho','Hiragino Mincho ProN',serif;");
+    if (isPromoted) pieceCss += "color:#a33b2e;";
+    if (p.owner === "w") pieceCss += "transform:rotate(180deg);";
+    var label = KANJI[p.type];
+    if (STACKED_TYPES[p.type]) {
+      span.setAttribute("style", pieceCss + "line-height:.95;");
+      var stackedFontSize = p.emphasis ? "16px" : "13px";
+      label.split("").forEach(function(ch, i){ if (i > 0) span.appendChild(document.createElement("br")); var line = document.createElement("span"); line.textContent = ch; line.style.fontSize = stackedFontSize; line.style.display = "inline-block"; line.style.transform = "scaleX(1.4)"; span.appendChild(line); });
+    } else {
+      span.setAttribute("style", pieceCss);
+      span.textContent = label;
+    }
+    cell.appendChild(span);
+  }
+}
+function highlightCell(cellEls, key){ if (cellEls[key]) cellEls[key].style.background = "#ffe08a"; }
+function buildCharDiv(text, flip, extraCss){
+  var el = document.createElement("div");
+  var css = "line-height:1.3;text-align:center;";
+  if (flip) css += "transform:rotate(180deg);";
+  if (extraCss) css += extraCss;
+  el.setAttribute("style", css);
+  el.textContent = text;
+  return el;
+}
+function buildNameDiv(name, fallback, flip){
+  var wrap = document.createElement("div");
+  var chars = (name || fallback).split("");
+  if (flip) chars = chars.slice().reverse();
+  chars.forEach(function(ch){ wrap.appendChild(buildCharDiv(ch, flip)); });
+  return wrap;
+}
+function buildHandLines(hand){
+  var lines = [];
+  HAND_ORDER.forEach(function(type){
+    var n = hand[type];
+    if (n && n > 0) { lines.push(KANJI[type]); if (n >= 2) lines.push(kanjiNum(n)); }
+  });
+  return lines;
+}
+function buildHandDiv(hand, flip){
+  var lines = buildHandLines(hand);
+  if (flip) lines = lines.slice().reverse();
+  var wrap = document.createElement("div");
+  wrap.setAttribute("style", "margin-top:4px;");
+  lines.forEach(function(t){ wrap.appendChild(buildCharDiv(t, flip)); });
+  return wrap;
+}
+function buildHalfDiv(marker, name, fallback, hand, flip, isGote){
+  var half = document.createElement("div");
+  half.setAttribute("style", "margin:" + (isGote ? "0 0 10px 0" : "10px 0 0 0") + ";");
+  var markerEl = buildCharDiv(marker, flip, "color:#a33b2e;font-size:18px;");
+  var nameEl = buildNameDiv(name, fallback, flip);
+  var handEl = buildHandDiv(hand, flip);
+  if (isGote) { half.appendChild(handEl); half.appendChild(nameEl); half.appendChild(markerEl); }
+  else { half.appendChild(markerEl); half.appendChild(nameEl); half.appendChild(handEl); }
+  return half;
+}
+function renderMochiInto(container, hands, names){
+  container.innerHTML = "";
+  container.setAttribute("style", "min-width:34px;padding:2px 4px;font-weight:bold;font-size:16px;box-sizing:border-box;");
+  container.appendChild(buildHalfDiv("☖", names && names.w, "後手", hands.w, true, true));
+  container.appendChild(buildHalfDiv("☗", names && names.b, "先手", hands.b, false, false));
+}
+function buildMoveRowsInto(tbody, notations, currentIdx, onClick){
+  tbody.innerHTML = "";
+  var numCss = "padding:2px 6px;border-bottom:1px solid #efe8d8;color:#a89b86;text-align:right;cursor:default;width:24px;";
+  var cellEls = [];
+  for (var i = 0; i < notations.length; i += 2) {
+    var tr = document.createElement("tr");
+    var sNumTd = document.createElement("td"); sNumTd.textContent = (i + 1); sNumTd.setAttribute("style", numCss); tr.appendChild(sNumTd);
+    var sTd = document.createElement("td");
+    sTd.setAttribute("style", "padding:2px 6px;cursor:pointer;border-bottom:1px solid #efe8d8;" + (i === currentIdx ? "background:#fff3a0;font-weight:bold;" : ""));
+    sTd.textContent = notations[i];
+    (function(idx, cell){ if (onClick) cell.addEventListener("click", function(){ onClick(idx); }); cellEls[idx] = cell; })(i, sTd);
+    tr.appendChild(sTd);
+    var gNumTd = document.createElement("td"); var gTd = document.createElement("td");
+    if (i + 1 < notations.length) {
+      gNumTd.textContent = (i + 2); gNumTd.setAttribute("style", numCss);
+      gTd.setAttribute("style", "padding:2px 6px;cursor:pointer;border-bottom:1px solid #efe8d8;" + (i + 1 === currentIdx ? "background:#fff3a0;font-weight:bold;" : ""));
+      gTd.textContent = notations[i + 1];
+      (function(idx, cell){ if (onClick) cell.addEventListener("click", function(){ onClick(idx); }); cellEls[idx] = cell; })(i + 1, gTd);
+    } else {
+      gNumTd.setAttribute("style", numCss);
+      gTd.setAttribute("style", "padding:2px 6px;border-bottom:1px solid #efe8d8;");
+      gTd.textContent = "";
+    }
+    tr.appendChild(gNumTd); tr.appendChild(gTd);
+    tbody.appendChild(tr);
+  }
+  return cellEls;
+}
+var DEMOTE = {TO:"FU",NY:"KY",NK:"KE",NG:"GI",UM:"KA",RY:"HI"};
+function baseTypeOf(t){ return DEMOTE[t] || t; }
+function cloneMap(m){ var o = {}; for (var k in m) o[k] = m[k]; return o; }
+function cloneHands(h){ return { b: cloneMap(h.b), w: cloneMap(h.w) }; }
+function notationForCompact(mv, prevTo){
+  var mark = mv.color === "b" ? "▲" : "△";
+  var same = prevTo && prevTo.file === mv.to.file && prevTo.rank === mv.to.rank;
+  var s = same
+    ? (mark + "同" + KANJI[mv.baseType])
+    : (mark + (ZEN[mv.to.file] || mv.to.file) + (KAN[mv.to.rank - 1] || mv.to.rank) + KANJI[mv.baseType]);
+  if (mv.drop) s += "打";
+  if (mv.promoted) s += "成";
+  return s;
+}
+function applyRecordToState(state, mv){
+  if (mv.drop) {
+    state.hands[mv.color][mv.baseType] -= 1;
+    if (state.hands[mv.color][mv.baseType] <= 0) delete state.hands[mv.color][mv.baseType];
+  } else if (mv.from) {
+    delete state.board[mv.from.file + "," + mv.from.rank];
+  }
+  if (mv.captured) {
+    var bt = baseTypeOf(mv.captured.type);
+    state.hands[mv.color][bt] = (state.hands[mv.color][bt] || 0) + 1;
+  }
+  state.board[mv.to.file + "," + mv.to.rank] = { type: mv.type, owner: mv.color };
+}
+function expandPayload(payload){
+  var state = { board: cloneMap(payload.initial.board), hands: cloneHands(payload.initial.hands) };
+  var snapshots = [{ board: cloneMap(state.board), hands: cloneHands(state.hands) }];
+  var notations = []; var tos = []; var prevTo = null;
+  (payload.moves || []).forEach(function(mv){
+    applyRecordToState(state, mv);
+    notations.push(notationForCompact(mv, prevTo));
+    tos.push(mv.to);
+    prevTo = mv.to;
+    snapshots.push({ board: cloneMap(state.board), hands: cloneHands(state.hands) });
+  });
+  return { snapshots: snapshots, notations: notations, tos: tos, names: payload.names, hasMoves: (payload.moves || []).length > 0 };
+}
+function decodeHashPayload(){
+  var m = (location.hash || "").match(/^#d=(.+)$/);
+  if (!m) return null;
+  try { return JSON.parse(decodeURIComponent(m[1])); } catch (e) { return null; }
+}
+function q(sel){ return document.querySelector(sel); }
+function rEl(name){ return q('[data-r="' + name + '"]'); }
+function aEl(name){ return q('[data-a="' + name + '"]'); }
+var boardAreaEl = rEl("boardArea");
+var mochiEl = rEl("mochi");
+var counterEl = rEl("counter");
+var moveBodyEl = rEl("moveBody");
+var speedSelect = rEl("speed");
+var cellEls = null;
+var DATA = null;
+var currentIndex = 0;
+var playTimer = null;
+function render(){
+  var snap = DATA.snapshots[currentIndex];
+  paintBoardInto(cellEls, snap.board);
+  if (currentIndex > 0 && DATA.tos && DATA.tos[currentIndex - 1]) { var lastTo = DATA.tos[currentIndex - 1]; highlightCell(cellEls, lastTo.file + "," + lastTo.rank); }
+  renderMochiInto(mochiEl, snap.hands, DATA.names);
+  buildMoveRowsInto(moveBodyEl, DATA.notations, currentIndex - 1, function(idx){ stopPlay(); currentIndex = idx + 1; render(); });
+  counterEl.textContent = currentIndex + " / " + (DATA.snapshots.length - 1) + " 手";
+  updateButtons();
+}
+function updateButtons(){
+  var last = DATA.snapshots.length - 1;
+  aEl("first").disabled = currentIndex === 0;
+  aEl("prev").disabled = currentIndex === 0;
+  aEl("next").disabled = currentIndex >= last;
+  aEl("last").disabled = currentIndex >= last;
+  aEl("play").disabled = last <= 0;
+  aEl("stop").disabled = !playTimer;
+}
+function stopPlay(){ if (playTimer) { clearInterval(playTimer); playTimer = null; updateButtons(); } }
+function startPlay(){
+  if (playTimer) return;
+  var last = DATA.snapshots.length - 1;
+  if (currentIndex >= last) currentIndex = 0;
+  var speed = parseInt(speedSelect.value, 10);
+  playTimer = setInterval(function(){
+    var last2 = DATA.snapshots.length - 1;
+    if (currentIndex >= last2) { stopPlay(); return; }
+    currentIndex++; render();
+  }, speed);
+  updateButtons();
+}
+aEl("first").addEventListener("click", function(){ stopPlay(); currentIndex = 0; render(); });
+aEl("prev").addEventListener("click", function(){ stopPlay(); if (currentIndex > 0) currentIndex--; render(); });
+aEl("next").addEventListener("click", function(){ stopPlay(); var last = DATA.snapshots.length - 1; if (currentIndex < last) currentIndex++; render(); });
+aEl("last").addEventListener("click", function(){ stopPlay(); currentIndex = DATA.snapshots.length - 1; render(); });
+aEl("stop").addEventListener("click", stopPlay);
+aEl("play").addEventListener("click", startPlay);
+function boot(){
+  stopPlay();
+  var payload = decodeHashPayload();
+  var emptyMsg = document.getElementById("empty-msg");
+  var layoutTable = document.getElementById("layout-table");
+  var controls = document.getElementById("controls");
+  if (!payload) { emptyMsg.style.display = ""; layoutTable.style.display = "none"; controls.style.display = "none"; return; }
+  emptyMsg.style.display = "none";
+  layoutTable.style.display = "";
+  DATA = expandPayload(payload);
+  cellEls = buildBoardSkeleton(boardAreaEl);
+  currentIndex = DATA.snapshots.length - 1;
+  controls.style.display = DATA.hasMoves ? "" : "none";
+  rEl("movelistWrap").style.display = DATA.hasMoves ? "" : "none";
+  render();
+}
+window.addEventListener("hashchange", boot);
+boot();
+})();
+</script>
+</body>
+</html>
