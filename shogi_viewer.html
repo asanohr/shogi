@@ -11,6 +11,9 @@
   [data-r="boardCol"] { display:block; width:100%; text-align:center; }
   [data-r="movelistWrap"] { display:block !important; width:100% !important; box-sizing:border-box; padding:10px 0 0 0 !important; }
   [data-r="movelistWrap"] > div { height:220px !important; }
+  #controls [data-r="mobileBreak"] { display:inline !important; }
+  #controls button, #controls select { font-size:16px !important; padding:9px 14px !important; }
+  #controls span[data-r="counter"] { font-size:15px !important; }
 }
 </style>
 </head>
@@ -22,6 +25,7 @@
 <button data-a="stop" title="停止" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">■</button> 
 <button data-a="next" title="1手進む" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">&gt;</button> 
 <button data-a="last" title="最後へ" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">&gt;|</button> 
+<br data-r="mobileBreak" style="display:none;">
 <span data-r="counter" style="font-size:13px;min-width:80px;text-align:center;"></span> 
 <button data-a="play" title="自動再生" style="background:#a33b2e;color:#fff;border:1px solid #a33b2e;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">▶ 再生</button> 
 <select data-r="speed" style="font-size:12px;">
@@ -31,12 +35,12 @@
 <div id="empty-msg" style="font-size:13px;color:#8a4a1c;">表示する棋譜データがありません。URLが正しいかご確認ください。</div>
 <div style="max-width:100%;overflow-x:auto;">
 <table id="layout-table" style="border-collapse:collapse;margin:0 auto;display:none;"><tr data-kse-row="1">
-<td data-r="boardCol" valign="top" style="vertical-align:top;padding:0;">
+<td data-r="boardCol" valign="top" style="vertical-align:top;padding:0;text-align:center;">
 <div data-r="mochiGote"></div>
 <div data-r="boardArea"></div>
 <div data-r="mochiSente"></div>
 </td>
-<td data-r="movelistWrap" valign="top" style="vertical-align:top;padding:0 0 0 8px;width:200px;display:none;">
+<td data-r="movelistWrap" valign="top" style="vertical-align:top;padding:0 0 0 8px;width:150px;display:none;">
 <div style="height:368px;overflow-y:auto;border:1px solid #d8cdb8;border-radius:4px;">
 <table style="width:100%;border-collapse:collapse;font-size:12px;">
 <thead><tr>
@@ -60,12 +64,31 @@ var ZEN = "０１２３４５６７８９";
 var KAN = "一二三四五六七八九";
 var CELL_CSS = "border:1px solid #6b4d24;text-align:center;vertical-align:middle;font-size:22px;user-select:none;box-sizing:border-box;width:38px;height:38px;background:#dcb35c;padding:0;";
 var LABEL_CSS = "text-align:center;vertical-align:middle;font-size:14px;color:#5a4a34;box-sizing:border-box;padding:0;border:none;background:#dcb35c;";
-var KOMA_W = 30, KOMA_H = 32;
+var KOMA_W = 30, KOMA_H = 34;
+var KOMA_SHAPE_CSS = "box-sizing:border-box;background:#f3ddaa;border:1px solid #8a5a2b;clip-path:polygon(30% 0%,70% 0%,100% 20%,100% 100%,0% 100%,0% 20%);align-items:center;justify-content:center;";
 function kanjiNum(n){ if (n<=0) return ""; if (n<=9) return KAN[n-1]; if (n<20) return n===10 ? "十" : ("十" + KAN[n-11]); return String(n); }
+function fillKomaContent(shape, type, emphasis, promoted){
+  var color = promoted ? "#a33b2e" : "#1a1208";
+  var textCss = "font-weight:900;line-height:1;color:" + color + ";-webkit-text-stroke:0.4px " + color + ";" + (emphasis ? "font-family:'Hiragino Sans','Yu Gothic','Meiryo',sans-serif;" : "font-family:'Yu Mincho','Hiragino Mincho ProN',serif;");
+  var label = KANJI[type];
+  if (STACKED_TYPES[type]) {
+    var col = document.createElement("div");
+    col.setAttribute("style", "display:flex;flex-direction:column;align-items:center;line-height:.95;");
+    var stackedFontSize = emphasis ? "15px" : "12px";
+    label.split("").forEach(function(ch){ var line = document.createElement("span"); line.textContent = ch; line.setAttribute("style", textCss + "font-size:" + stackedFontSize + ";transform:scaleX(1.3);"); col.appendChild(line); });
+    shape.appendChild(col);
+  } else {
+    var span = document.createElement("span");
+    span.setAttribute("style", textCss + "font-size:" + (emphasis ? "22px" : "19px") + ";");
+    span.textContent = label;
+    shape.appendChild(span);
+  }
+}
 function buildBoardSkeleton(boardAreaEl){
   boardAreaEl.innerHTML = "";
+  boardAreaEl.setAttribute("style", "display:inline-block;background:#dcb35c;padding:0 0 6px 6px;");
   var table = document.createElement("table");
-  table.setAttribute("style", "border-collapse:collapse;background:#fff;");
+  table.setAttribute("style", "border-collapse:collapse;background:#dcb35c;");
   table.setAttribute("cellpadding", "0");
   table.setAttribute("cellspacing", "0");
   var cellEls = {};
@@ -92,40 +115,36 @@ function paintBoardInto(cellEls, boardMap){
   for (var key in cellEls) { cellEls[key].innerHTML = ""; cellEls[key].setAttribute("style", CELL_CSS); }
   for (var k2 in boardMap) {
     var p = boardMap[k2]; var cell = cellEls[k2]; if (!cell) continue;
-    var isPromoted = !!PROMOTED_TYPES[p.type];
     var shape = document.createElement("div");
-    var shapeCss = "position:relative;width:" + KOMA_W + "px;height:" + KOMA_H + "px;margin:0 auto;box-sizing:border-box;background:#f3ddaa;border:1px solid #8a5a2b;clip-path:polygon(32% 0%,68% 0%,100% 22%,86% 100%,14% 100%,0% 22%);display:flex;align-items:center;justify-content:center;";
+    var shapeCss = "position:relative;display:flex;width:" + KOMA_W + "px;height:" + KOMA_H + "px;margin:0 auto;" + KOMA_SHAPE_CSS;
     if (p.owner === "w") shapeCss += "transform:rotate(180deg);";
     shape.setAttribute("style", shapeCss);
-    var textCss = "font-weight:bold;line-height:1;" + (p.emphasis ? "font-family:'Hiragino Sans','Yu Gothic','Meiryo',sans-serif;" : "font-family:'Yu Mincho','Hiragino Mincho ProN',serif;");
-    if (isPromoted) textCss += "color:#a33b2e;";
-    var label = KANJI[p.type];
-    if (STACKED_TYPES[p.type]) {
-      var col = document.createElement("div");
-      col.setAttribute("style", "display:flex;flex-direction:column;align-items:center;line-height:.95;");
-      var stackedFontSize = p.emphasis ? "15px" : "12px";
-      label.split("").forEach(function(ch){ var line = document.createElement("span"); line.textContent = ch; line.setAttribute("style", textCss + "font-size:" + stackedFontSize + ";transform:scaleX(1.3);"); col.appendChild(line); });
-      shape.appendChild(col);
-    } else {
-      var span = document.createElement("span");
-      span.setAttribute("style", textCss + "font-size:" + (p.emphasis ? "22px" : "19px") + ";");
-      span.textContent = label;
-      shape.appendChild(span);
-    }
+    fillKomaContent(shape, p.type, p.emphasis, !!PROMOTED_TYPES[p.type]);
     cell.appendChild(shape);
   }
 }
-function highlightCell(cellEls, key){ if (cellEls[key]) cellEls[key].style.background = "#ffe08a"; }
+function highlightCell(cellEls, key){ if (cellEls[key]) cellEls[key].style.background = "#ff9800"; }
 function renderMochiRowInto(container, hand, name, fallback, flip){
   container.innerHTML = "";
   container.setAttribute("style", "text-align:center;box-sizing:border-box;padding:" + (flip ? "0 0 6px 0" : "6px 0 0 0") + ";");
   var inner = document.createElement("div");
-  var css = "display:inline-block;font-weight:bold;font-size:16px;white-space:nowrap;";
+  var css = "display:inline-flex;align-items:center;font-weight:bold;font-size:16px;white-space:nowrap;";
   if (flip) css += "transform:rotate(180deg);";
   inner.setAttribute("style", css);
-  var pieces = [];
-  HAND_ORDER.forEach(function(type){ var n = hand[type] || 0; for (var i = 0; i < n; i++) pieces.push(KANJI[type]); });
-  inner.textContent = (name || fallback) + (pieces.length ? "\u3000" + pieces.join(" ") : "");
+  var nameSpan = document.createElement("span");
+  nameSpan.textContent = name || fallback;
+  nameSpan.style.marginRight = "6px";
+  inner.appendChild(nameSpan);
+  var mw = KOMA_W - 6, mh = KOMA_H - 6;
+  HAND_ORDER.forEach(function(type){
+    var n = hand[type] || 0;
+    for (var i = 0; i < n; i++) {
+      var shape = document.createElement("div");
+      shape.setAttribute("style", "display:inline-flex;vertical-align:middle;width:" + mw + "px;height:" + mh + "px;margin:0 2px;" + KOMA_SHAPE_CSS);
+      fillKomaContent(shape, type, false, false);
+      inner.appendChild(shape);
+    }
+  });
   container.appendChild(inner);
 }
 function buildMoveRowsInto(tbody, notations, currentIdx, onClick){
