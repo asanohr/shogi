@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>棋譜ビューア</title>
+<style>
+@media (max-width:600px){
+  #layout-table[id] { display:block; width:100%; }
+  [data-kse-row] { display:block; width:100%; }
+  [data-r="boardCol"] { display:block; width:100%; text-align:center; }
+  [data-r="movelistWrap"] { display:block !important; width:100% !important; box-sizing:border-box; padding:10px 0 0 0 !important; }
+  [data-r="movelistWrap"] > div { height:220px !important; }
+}
+</style>
 </head>
 <body style="margin:0;padding:0;background:#fff;">
 <div id="app" style="font-family:'Hiragino Sans','Yu Gothic',sans-serif;color:#2b2118;padding:16px;">
@@ -20,23 +29,26 @@
 </select>
 </div>
 <div id="empty-msg" style="font-size:13px;color:#8a4a1c;">表示する棋譜データがありません。URLが正しいかご確認ください。</div>
-<table id="layout-table" style="border-collapse:collapse;margin:0 auto;display:none;"><tr>
-<td data-r="mochi" valign="top" style="vertical-align:top;padding:0 8px 0 0;"></td>
-<td data-r="boardArea" valign="top" style="vertical-align:top;padding:0;"></td>
+<div style="max-width:100%;overflow-x:auto;">
+<table id="layout-table" style="border-collapse:collapse;margin:0 auto;display:none;"><tr data-kse-row="1">
+<td data-r="boardCol" valign="top" style="vertical-align:top;padding:0;">
+<div data-r="mochiGote"></div>
+<div data-r="boardArea"></div>
+<div data-r="mochiSente"></div>
+</td>
 <td data-r="movelistWrap" valign="top" style="vertical-align:top;padding:0 0 0 8px;width:200px;display:none;">
-<div style="height:280px;overflow-y:auto;border:1px solid #d8cdb8;border-radius:4px;">
+<div style="height:368px;overflow-y:auto;border:1px solid #d8cdb8;border-radius:4px;">
 <table style="width:100%;border-collapse:collapse;font-size:12px;">
 <thead><tr>
-<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;width:24px;"></th>
-<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;">先手</th>
-<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;width:24px;"></th>
-<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;">後手</th>
+<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;width:28px;"></th>
+<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;">指し手</th>
 </tr></thead>
 <tbody data-r="moveBody"></tbody>
 </table>
 </div>
 </td>
 </tr></table>
+</div>
 </div>
 <script>
 (function(){
@@ -46,8 +58,9 @@ var STACKED_TYPES = {NY:1,NK:1,NG:1};
 var HAND_ORDER = ["HI","KA","KI","GI","KE","KY","FU"];
 var ZEN = "０１２３４５６７８９";
 var KAN = "一二三四五六七八九";
-var CELL_CSS = "border:1px solid #6b4d24;text-align:center;vertical-align:middle;font-size:22px;user-select:none;box-sizing:border-box;width:38px;height:38px;background:#fff;padding:0;";
-var LABEL_CSS = "text-align:center;vertical-align:middle;font-size:14px;color:#5a4a34;box-sizing:border-box;padding:0;border:none;background:#fff;";
+var CELL_CSS = "border:1px solid #6b4d24;text-align:center;vertical-align:middle;font-size:22px;user-select:none;box-sizing:border-box;width:38px;height:38px;background:#dcb35c;padding:0;";
+var LABEL_CSS = "text-align:center;vertical-align:middle;font-size:14px;color:#5a4a34;box-sizing:border-box;padding:0;border:none;background:#dcb35c;";
+var KOMA_W = 30, KOMA_H = 32;
 function kanjiNum(n){ if (n<=0) return ""; if (n<=9) return KAN[n-1]; if (n<20) return n===10 ? "十" : ("十" + KAN[n-11]); return String(n); }
 function buildBoardSkeleton(boardAreaEl){
   boardAreaEl.innerHTML = "";
@@ -79,96 +92,54 @@ function paintBoardInto(cellEls, boardMap){
   for (var key in cellEls) { cellEls[key].innerHTML = ""; cellEls[key].setAttribute("style", CELL_CSS); }
   for (var k2 in boardMap) {
     var p = boardMap[k2]; var cell = cellEls[k2]; if (!cell) continue;
-    var span = document.createElement("span");
     var isPromoted = !!PROMOTED_TYPES[p.type];
-    var pieceCss = "display:inline-block;font-weight:bold;line-height:1;" + (p.emphasis ? "font-family:'Hiragino Sans','Yu Gothic','Meiryo',sans-serif;font-size:26px;" : "font-family:'Yu Mincho','Hiragino Mincho ProN',serif;");
-    if (isPromoted) pieceCss += "color:#a33b2e;";
-    if (p.owner === "w") pieceCss += "transform:rotate(180deg);";
+    var shape = document.createElement("div");
+    var shapeCss = "position:relative;width:" + KOMA_W + "px;height:" + KOMA_H + "px;margin:0 auto;box-sizing:border-box;background:#f3ddaa;border:1px solid #8a5a2b;clip-path:polygon(32% 0%,68% 0%,100% 22%,86% 100%,14% 100%,0% 22%);display:flex;align-items:center;justify-content:center;";
+    if (p.owner === "w") shapeCss += "transform:rotate(180deg);";
+    shape.setAttribute("style", shapeCss);
+    var textCss = "font-weight:bold;line-height:1;" + (p.emphasis ? "font-family:'Hiragino Sans','Yu Gothic','Meiryo',sans-serif;" : "font-family:'Yu Mincho','Hiragino Mincho ProN',serif;");
+    if (isPromoted) textCss += "color:#a33b2e;";
     var label = KANJI[p.type];
     if (STACKED_TYPES[p.type]) {
-      span.setAttribute("style", pieceCss + "line-height:.95;");
-      var stackedFontSize = p.emphasis ? "16px" : "13px";
-      label.split("").forEach(function(ch, i){ if (i > 0) span.appendChild(document.createElement("br")); var line = document.createElement("span"); line.textContent = ch; line.style.fontSize = stackedFontSize; line.style.display = "inline-block"; line.style.transform = "scaleX(1.4)"; span.appendChild(line); });
+      var col = document.createElement("div");
+      col.setAttribute("style", "display:flex;flex-direction:column;align-items:center;line-height:.95;");
+      var stackedFontSize = p.emphasis ? "15px" : "12px";
+      label.split("").forEach(function(ch){ var line = document.createElement("span"); line.textContent = ch; line.setAttribute("style", textCss + "font-size:" + stackedFontSize + ";transform:scaleX(1.3);"); col.appendChild(line); });
+      shape.appendChild(col);
     } else {
-      span.setAttribute("style", pieceCss);
+      var span = document.createElement("span");
+      span.setAttribute("style", textCss + "font-size:" + (p.emphasis ? "22px" : "19px") + ";");
       span.textContent = label;
+      shape.appendChild(span);
     }
-    cell.appendChild(span);
+    cell.appendChild(shape);
   }
 }
 function highlightCell(cellEls, key){ if (cellEls[key]) cellEls[key].style.background = "#ffe08a"; }
-function buildCharDiv(text, flip, extraCss){
-  var el = document.createElement("div");
-  var css = "line-height:1.3;text-align:center;";
-  if (flip) css += "transform:rotate(180deg);";
-  if (extraCss) css += extraCss;
-  el.setAttribute("style", css);
-  el.textContent = text;
-  return el;
-}
-function buildNameDiv(name, fallback, flip){
-  var wrap = document.createElement("div");
-  var chars = (name || fallback).split("");
-  if (flip) chars = chars.slice().reverse();
-  chars.forEach(function(ch){ wrap.appendChild(buildCharDiv(ch, flip)); });
-  return wrap;
-}
-function buildHandLines(hand){
-  var lines = [];
-  HAND_ORDER.forEach(function(type){
-    var n = hand[type];
-    if (n && n > 0) { lines.push(KANJI[type]); if (n >= 2) lines.push(kanjiNum(n)); }
-  });
-  return lines;
-}
-function buildHandDiv(hand, flip){
-  var lines = buildHandLines(hand);
-  if (flip) lines = lines.slice().reverse();
-  var wrap = document.createElement("div");
-  wrap.setAttribute("style", "margin-top:4px;");
-  lines.forEach(function(t){ wrap.appendChild(buildCharDiv(t, flip)); });
-  return wrap;
-}
-function buildHalfDiv(marker, name, fallback, hand, flip, isGote){
-  var half = document.createElement("div");
-  half.setAttribute("style", "margin:" + (isGote ? "0 0 10px 0" : "10px 0 0 0") + ";");
-  var markerEl = buildCharDiv(marker, flip, "color:#a33b2e;font-size:18px;");
-  var nameEl = buildNameDiv(name, fallback, flip);
-  var handEl = buildHandDiv(hand, flip);
-  if (isGote) { half.appendChild(handEl); half.appendChild(nameEl); half.appendChild(markerEl); }
-  else { half.appendChild(markerEl); half.appendChild(nameEl); half.appendChild(handEl); }
-  return half;
-}
-function renderMochiInto(container, hands, names){
+function renderMochiRowInto(container, hand, name, fallback, flip){
   container.innerHTML = "";
-  container.setAttribute("style", "min-width:34px;padding:2px 4px;font-weight:bold;font-size:16px;box-sizing:border-box;");
-  container.appendChild(buildHalfDiv("☖", names && names.w, "後手", hands.w, true, true));
-  container.appendChild(buildHalfDiv("☗", names && names.b, "先手", hands.b, false, false));
+  container.setAttribute("style", "text-align:center;box-sizing:border-box;padding:" + (flip ? "0 0 6px 0" : "6px 0 0 0") + ";");
+  var inner = document.createElement("div");
+  var css = "display:inline-block;font-weight:bold;font-size:16px;white-space:nowrap;";
+  if (flip) css += "transform:rotate(180deg);";
+  inner.setAttribute("style", css);
+  var pieces = [];
+  HAND_ORDER.forEach(function(type){ var n = hand[type] || 0; for (var i = 0; i < n; i++) pieces.push(KANJI[type]); });
+  inner.textContent = (name || fallback) + (pieces.length ? "\u3000" + pieces.join(" ") : "");
+  container.appendChild(inner);
 }
 function buildMoveRowsInto(tbody, notations, currentIdx, onClick){
   tbody.innerHTML = "";
-  var numCss = "padding:2px 6px;border-bottom:1px solid #efe8d8;color:#a89b86;text-align:right;cursor:default;width:24px;";
+  var numCss = "padding:2px 6px;border-bottom:1px solid #efe8d8;color:#a89b86;text-align:right;cursor:default;width:28px;";
   var cellEls = [];
-  for (var i = 0; i < notations.length; i += 2) {
+  for (var i = 0; i < notations.length; i++) {
     var tr = document.createElement("tr");
-    var sNumTd = document.createElement("td"); sNumTd.textContent = (i + 1); sNumTd.setAttribute("style", numCss); tr.appendChild(sNumTd);
-    var sTd = document.createElement("td");
-    sTd.setAttribute("style", "padding:2px 6px;cursor:pointer;border-bottom:1px solid #efe8d8;" + (i === currentIdx ? "background:#fff3a0;font-weight:bold;" : ""));
-    sTd.textContent = notations[i];
-    (function(idx, cell){ if (onClick) cell.addEventListener("click", function(){ onClick(idx); }); cellEls[idx] = cell; })(i, sTd);
-    tr.appendChild(sTd);
-    var gNumTd = document.createElement("td"); var gTd = document.createElement("td");
-    if (i + 1 < notations.length) {
-      gNumTd.textContent = (i + 2); gNumTd.setAttribute("style", numCss);
-      gTd.setAttribute("style", "padding:2px 6px;cursor:pointer;border-bottom:1px solid #efe8d8;" + (i + 1 === currentIdx ? "background:#fff3a0;font-weight:bold;" : ""));
-      gTd.textContent = notations[i + 1];
-      (function(idx, cell){ if (onClick) cell.addEventListener("click", function(){ onClick(idx); }); cellEls[idx] = cell; })(i + 1, gTd);
-    } else {
-      gNumTd.setAttribute("style", numCss);
-      gTd.setAttribute("style", "padding:2px 6px;border-bottom:1px solid #efe8d8;");
-      gTd.textContent = "";
-    }
-    tr.appendChild(gNumTd); tr.appendChild(gTd);
+    var numTd = document.createElement("td"); numTd.textContent = (i + 1); numTd.setAttribute("style", numCss); tr.appendChild(numTd);
+    var td = document.createElement("td");
+    td.setAttribute("style", "padding:2px 6px;cursor:pointer;border-bottom:1px solid #efe8d8;" + (i === currentIdx ? "background:#fff3a0;font-weight:bold;" : ""));
+    td.textContent = notations[i];
+    (function(idx, cell){ if (onClick) cell.addEventListener("click", function(){ onClick(idx); }); cellEls[idx] = cell; })(i, td);
+    tr.appendChild(td);
     tbody.appendChild(tr);
   }
   return cellEls;
@@ -222,7 +193,8 @@ function q(sel){ return document.querySelector(sel); }
 function rEl(name){ return q('[data-r="' + name + '"]'); }
 function aEl(name){ return q('[data-a="' + name + '"]'); }
 var boardAreaEl = rEl("boardArea");
-var mochiEl = rEl("mochi");
+var mochiGoteEl = rEl("mochiGote");
+var mochiSenteEl = rEl("mochiSente");
 var counterEl = rEl("counter");
 var moveBodyEl = rEl("moveBody");
 var speedSelect = rEl("speed");
@@ -234,7 +206,8 @@ function render(){
   var snap = DATA.snapshots[currentIndex];
   paintBoardInto(cellEls, snap.board);
   if (currentIndex > 0 && DATA.tos && DATA.tos[currentIndex - 1]) { var lastTo = DATA.tos[currentIndex - 1]; highlightCell(cellEls, lastTo.file + "," + lastTo.rank); }
-  renderMochiInto(mochiEl, snap.hands, DATA.names);
+  renderMochiRowInto(mochiGoteEl, snap.hands.w, DATA.names && DATA.names.w, "後手", true);
+  renderMochiRowInto(mochiSenteEl, snap.hands.b, DATA.names && DATA.names.b, "先手", false);
   buildMoveRowsInto(moveBodyEl, DATA.notations, currentIndex - 1, function(idx){ stopPlay(); currentIndex = idx + 1; render(); });
   counterEl.textContent = currentIndex + " / " + (DATA.snapshots.length - 1) + " 手";
   updateButtons();
