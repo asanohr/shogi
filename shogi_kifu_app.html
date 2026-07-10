@@ -1,0 +1,3357 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>観る将pro</title>
+<style>
+  :root {
+    --board-bg: #dcb35c;
+    --board-line: #4a3319;
+    --wood-dark: #8a5a2b;
+    --panel-bg: #faf6ee;
+    --panel-border: #d8cdb8;
+    --accent: #a33b2e;
+    --text: #2b2118;
+    --highlight: #fff3a0;
+    --last-move: #ffe08a;
+    --font-mincho: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+    --font-gothic: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: var(--font-gothic);
+    background: #f0ece2;
+    color: var(--text);
+    padding: 16px;
+  }
+  h1 {
+    font-size: 20px;
+    margin: 0 0 12px;
+    text-align: center;
+  }
+  .layout {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 20px;
+    justify-content: flex-start;
+    align-items: flex-start;
+    max-width: 1400px;
+    margin: 0 auto;
+    overflow-x: auto;
+  }
+  .board-column {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+  }
+  .board-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    /* 盤面・持ち駒パネル・段/筋のラベルはそれぞれ個別に白背景を持って
+       いるが、間のgap部分はこの親要素の背景がそのまま透けて見える。
+       ページ全体の背景（beige寄りの#f0ece2）がそこに覗いて「グレーの
+       隙間」に見えてしまうため、この行全体を白にして隙間も含めて
+       ひとつの白い長方形に見えるようにする。 */
+    background: #fff;
+    padding: 8px;
+    border-radius: 6px;
+  }
+  .mochi-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .mochi-spacer {
+    height: 26px;
+  }
+  /* Height is locked to exactly 9 cells (9 * 50px), so the panel's visible
+     range always matches the board's own 1段-top to 9段-bottom extent
+     (previously position:absolute + overflow:visible let captured-piece
+     text spill out above/below the board). Width is auto (not fixed) so
+     that when a player holds many captured pieces, buildHandBlock's
+     multi-column split (mg-hand-split, below) can add as many side-by-side
+     columns as needed to stay within this fixed height - the panel simply
+     grows wider (to the left of the board) instead of ever scrolling. */
+  .mochigoma-vertical {
+    display: flex;
+    flex-direction: column;
+    width: auto;
+    min-width: 40px;
+    height: 450px;
+    box-sizing: border-box;
+    padding: 4px 6px;
+    background: #fff;
+    font-family: var(--font-gothic);
+    font-weight: bold;
+    font-size: 22px;
+    /* 先手☗と後手☖の間隔を文字1字分ほどあける。gap分は flex:1 1 0 の
+       各半分から自動的に差し引かれるので、パネル全体の固定高さ(450px)は
+       変わらない。 */
+    gap: 1em;
+  }
+  /* No scrollbar: overflow is intentionally visible. Each half's content
+     (marker + name + hand block) is expected to always fit within its
+     share of the fixed 450px height because buildHandBlock adds more
+     columns rather than growing a single column taller. */
+  .mg-half {
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    overflow: visible;
+  }
+  .mg-gote {
+    flex-direction: column-reverse;
+    justify-content: flex-start;
+  }
+  .mg-sente {
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+  .mg-marker {
+    line-height: 1.2;
+    text-align: center;
+    color: var(--accent);
+  }
+  .mg-name {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .mg-hand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* 名前と持ち駒の間に半角スペース1文字分ほどの隙間をあける。先手は
+       通常のcolumn方向で名前(上)→持ち駒(下)の順なので、margin-topが
+       ちょうど名前と持ち駒の境目に効く。 */
+    margin-top: 0.5em;
+  }
+  /* 後手は.mg-half自体がcolumn-reverseで、DOM順（マーカー→名前→持ち駒）
+     に対し見た目は持ち駒(上)→名前(中)→マーカー(下)になる。持ち駒の
+     margin-topは物理的な上端（パネル外側の端）に隙間を作ってしまい
+     名前との境目には効かないため、代わりにmargin-bottomで持ち駒の
+     物理的な下端（＝名前との境目）に隙間を作る。 */
+  .mg-gote .mg-hand {
+    margin-top: 0;
+    margin-bottom: 0.5em;
+  }
+  .mg-hand.mg-hand-split {
+    flex-direction: row-reverse;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .mg-hand-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .mg-char {
+    line-height: 1.2;
+    text-align: center;
+  }
+  .mg-char.flip {
+    transform: rotate(180deg);
+  }
+  /* Gote's name/hand-piece characters are appended in normal reading order
+     in the DOM, but the gote half is anchored to the board's center line
+     and grows upward, so these two inner blocks must also stack in
+     reverse (column-reverse) - this keeps the character closest to the
+     ☖ marker as the FIRST character of the name (or first hand-piece
+     type), matching how the sente side reads outward from its marker. */
+  .mg-gote .mg-name,
+  .mg-gote .mg-hand-col,
+  .mg-gote .mg-hand:not(.mg-hand-split) {
+    flex-direction: column-reverse;
+  }
+  .board-wrap {
+    display: grid;
+    grid-template-columns: auto auto;
+    grid-template-rows: auto auto;
+    gap: 6px;
+  }
+  .file-labels, .rank-labels {
+    display: flex;
+    font-family: var(--font-gothic);
+    font-weight: bold;
+    background: #fff;
+  }
+  .file-labels {
+    grid-column: 1;
+    grid-row: 1;
+    flex-direction: row;
+  }
+  .file-labels div, .corner {
+    width: 50px;
+    height: 26px;
+    line-height: 26px;
+    text-align: center;
+    font-size: 18px;
+    color: #5a4a34;
+    box-sizing: border-box;
+  }
+  .corner {
+    grid-column: 2;
+    grid-row: 1;
+    background: #fff;
+  }
+  .rank-labels {
+    grid-column: 2;
+    grid-row: 2;
+    flex-direction: column;
+  }
+  .rank-labels div {
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: #5a4a34;
+    width: 20px;
+  }
+  .board {
+    grid-column: 1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: repeat(9, 50px);
+    grid-template-rows: repeat(9, 50px);
+    background: #fff;
+    border: 2px solid var(--board-line);
+  }
+  .cell {
+    border: 1px solid #6b4d24;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    font-size: 30px;
+    user-select: none;
+  }
+  .cell.last-move { background: var(--last-move); }
+  .cell.editable { cursor: pointer; }
+  .cell.editable:hover { background: #fff3d0; }
+  /* 最後にクリックしたマスの目印（ホバーと同じベージュ）。あくまで編集中
+     の目印なので、紙面用出力・ウェブ用出力には反映しない。 */
+  .cell.selected { background: #fff3d0; }
+  .piece {
+    font-weight: bold;
+    line-height: 1;
+    writing-mode: horizontal-tb;
+    font-family: var(--font-mincho);
+  }
+  .piece.white-owner { transform: rotate(180deg); }
+  .piece.promoted { color: var(--accent); }
+  /* 「強調」した駒: 明朝体からゴシック体に変え、文字も一回り大きくする。
+     紙面用出力・ウェブ用出力にも同じ考え方（ゴシック・大きめ）で反映する。 */
+  .piece.emphasis {
+    font-family: var(--font-gothic);
+    font-size: 38px;
+  }
+  .piece.emphasis.stacked span {
+    font-size: 22px;
+  }
+  .piece.stacked {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 0.95;
+  }
+  /* 成銀・成桂・成香などの2文字駒は、縦の大きさ（font-size/line-height）は
+     変えずに文字の幅だけ広げて視認性を上げる。stacked pieceのspanは
+     .piece.stacked（display:flexのflexアイテム）の子なので、非置換inline
+     要素でもtransformが適用される（flexアイテムは自動的にblock化される）。 */
+  .piece.stacked span {
+    font-size: 17px;
+    transform: scaleX(1.6);
+  }
+  /* 盤面読み取り(OCR)の進行状況・結果メッセージ。盤面のすぐ上に大きく
+     目立たせて表示する。テキストがある時だけJS側でdisplayを切り替える。
+     エラーメッセージは「Failed to fetch」やドメイン名など、スペースを
+     含まない長い英字の並びを含むことがあり、white-space:pre-line だけ
+     では折り返されず横スクロールが必要になってしまう。
+     overflow-wrap/word-break を指定して、単語の途中でも折り返せるように
+     する。max-width/box-sizing は親カラム幅からあふれないようにするため。 */
+  .ocr-status-banner {
+    font-size: 13px;
+    font-weight: bold;
+    color: var(--accent);
+    background: #fff3e6;
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    padding: 8px 14px;
+    text-align: center;
+    white-space: pre-line;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .side-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 342px;
+    max-width: 342px;
+    flex: 0 0 342px;
+  }
+  .movelist-column {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 342px;
+    max-width: 342px;
+    flex: 0 0 342px;
+  }
+  .app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    background: #fff;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin: 0 auto 16px;
+    max-width: 1400px;
+  }
+  .app-title {
+    font-size: 20px;
+    margin: 0;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .header-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+  }
+  .modal-box {
+    background: #fff;
+    border-radius: 8px;
+    padding: 16px;
+    width: min(640px, 92vw);
+    max-height: 86vh;
+    overflow-y: auto;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  }
+  .modal-box h2 {
+    font-size: 15px;
+    margin: 0 0 8px;
+    color: #5a4a34;
+  }
+  #embed-output {
+    width: 100%;
+    min-height: 220px;
+    font-family: monospace;
+    font-size: 11px;
+    white-space: pre;
+  }
+  .card {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .card h2 {
+    font-size: 14px;
+    margin: 0 0 8px;
+    color: #5a4a34;
+  }
+  textarea {
+    width: 100%;
+    min-height: 90px;
+    resize: vertical;
+    font-size: 13px;
+    padding: 6px;
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    font-family: inherit;
+  }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .name-fields { margin-bottom: 8px; }
+  .name-fields label { font-size: 12px; display: flex; align-items: center; gap: 4px; }
+  .name-fields input[type="text"] {
+    width: 110px;
+    font-size: 13px;
+    padding: 4px 6px;
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    font-family: inherit;
+  }
+  button {
+    background: #fff;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover { background: #f2ecdd; }
+  button.primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  button.primary:hover { background: #8a2f24; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .controls { justify-content: center; }
+  .move-counter { font-size: 13px; min-width: 90px; text-align: center; }
+  .move-list {
+    height: 260px;
+    min-height: 100px;
+    max-height: 600px;
+    overflow-y: auto;
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    resize: vertical;
+  }
+  .move-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .move-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--panel-border);
+    padding: 4px 6px;
+    font-size: 12px;
+    color: #5a4a34;
+    text-align: center;
+  }
+  .move-table td {
+    padding: 3px 8px;
+    cursor: pointer;
+    border-bottom: 1px solid #efe8d8;
+  }
+  .move-table td.num-col, .move-table th.num-col {
+    color: #a89b86;
+    text-align: right;
+    cursor: default;
+    width: 28px;
+  }
+  .move-table td.sente-col { text-align: left; }
+  .move-table td.gote-col { text-align: left; }
+  .move-table td:hover:not(.num-col) { background: #f2ecdd; }
+  .move-table td.current { background: var(--highlight); font-weight: bold; }
+  .move-table td.empty-cell { cursor: default; }
+  .warnings {
+    font-size: 12px;
+    color: #8a4a1c;
+    max-height: 120px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+  .warnings.empty { color: #6b8a5a; }
+  .file-input-label {
+    display: inline-block;
+    background: #fff;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .file-input-label:hover { background: #f2ecdd; }
+  input[type="file"] { display: none; }
+  .status-line { font-size: 12px; color: #6b5d4a; margin-top: 4px; white-space: pre-line; }
+  .hint { font-size: 11px; color: #8a7c66; margin-top: 4px; line-height: 1.5; }
+  .dropzone {
+    border: 2px dashed var(--panel-border);
+    border-radius: 6px;
+    padding: 16px;
+    text-align: center;
+    font-size: 12px;
+    color: #6b5d4a;
+    cursor: pointer;
+    background: #fff;
+    margin-top: 8px;
+  }
+  .dropzone.dragover { background: #f2ecdd; border-color: var(--accent); }
+  /* 盤面修正: ドラッグ&ドロップ編集（クリックによる駒選択ピッカーは廃止）。
+     盤面のマスにドラッグ中はdrag-overクラスで軽くハイライトする。 */
+  .cell.drag-over { background: #fff3d0; }
+  .piece.draggable-piece { cursor: grab; }
+  .piece.draggable-piece:active { cursor: grabbing; }
+  /* 駒の総数（盤面+両者の持ち駒、成り/不成り・先手/後手を問わず同一種を
+     合算）が将棋の駒箱の上限を超えている場合の警告表示（背景を赤系に）。 */
+  .piece.over-quota { background: #fca5a5; border-radius: 4px; }
+  .edit-delete-zone {
+    border: 2px dashed var(--accent);
+    border-radius: 6px;
+    padding: 10px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--accent);
+    background: #fff;
+    margin-bottom: 10px;
+  }
+  .edit-delete-zone.drag-over { background: #fde2e2; }
+  .edit-supply-section { margin-bottom: 10px; }
+  .edit-supply-section h3 { font-size: 12px; margin: 0 0 6px; color: #5a4a34; }
+  .edit-supply-empty { margin: 0; }
+  .edit-supply-list { display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px; }
+  .supply-piece {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mincho);
+    font-size: 20px;
+    font-weight: bold;
+    min-width: 34px;
+    height: 34px;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    background: #fff;
+    cursor: grab;
+  }
+  .supply-piece:active { cursor: grabbing; }
+  .edit-hand-panel {
+    display: flex;
+    gap: 16px;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 8px;
+    background: #fff;
+    font-size: 13px;
+  }
+  .edit-hand-col { flex: 1; }
+  .edit-hand-col h3 { font-size: 12px; margin: 0 0 6px; margin-left: 3em; color: #5a4a34; }
+  .edit-hand-row { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 4px; }
+  .edit-hand-row .stepper { display: flex; align-items: center; gap: 4px; }
+  .edit-hand-row button { padding: 2px 8px; font-size: 12px; }
+  .edit-hand-row.over-quota { background: #fca5a5; border-radius: 4px; }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <h1 class="app-title">観る将pro</h1>
+  <div class="header-actions">
+    <button class="primary" id="btn-print-output">🖨️ 紙面用出力</button>
+    <button class="primary" id="btn-embed-tag">🌐 ウェブ用出力</button>
+    <button class="primary" id="btn-iframe-page">🔗 iframeで埋め込む</button>
+    <button id="btn-api-key-settings">🔑 APIキー設定</button>
+  </div>
+</header>
+<div class="layout">
+  <div class="side-panel">
+    <div class="card">
+      <h2>棋譜を読み込む</h2>
+      <div class="row name-fields">
+        <label>先手: <input type="text" id="input-sente-name" placeholder="例）藤井聡太"></label>
+        <label>後手: <input type="text" id="input-gote-name" placeholder="例）伊藤匠"></label>
+      </div>
+      <textarea id="kifu-text" placeholder="例）７六歩　３四歩　２六歩　８四歩 …&#10;（▲△／■□記号、手数、消費時間付き、KIF形式の「７六歩(77)」形式にも対応）"></textarea>
+      <div class="row" style="margin-top:8px;">
+        <button class="primary" id="btn-load">棋譜を読み込む</button>
+        <button id="btn-kif-dropzone-toggle">kifを読み込む</button>
+        <button id="btn-reset">クリア</button>
+      </div>
+      <div class="dropzone" id="kif-dropzone" style="display:none;">
+        ここにKIFファイルをドロップ<br>（クリックしてファイルを選択することもできます）
+        <input type="file" id="kifu-file" accept=".kif,.kifu,.txt">
+      </div>
+      <div class="status-line" id="file-status"></div>
+      <div class="warnings empty" id="warnings">まだ棋譜を読み込んでいません。</div>
+    </div>
+    <div class="card">
+      <h2>盤面カスタマイズ</h2>
+      <div class="row">
+        <button id="btn-ocr-toggle">盤面読み取り</button>
+        <button id="btn-initial-board">１手目から編集</button>
+        <button id="btn-blank-board">詰将棋編集</button>
+      </div>
+      <div class="dropzone" id="ocr-dropzone" style="display:none;">
+        ここに盤面の画像をドロップ<br>（クリックしてファイルを選択することもできます）
+        <input type="file" id="ocr-file-input" accept="image/*">
+      </div>
+    </div>
+  </div>
+  <div class="board-column">
+    <div class="row controls">
+      <button id="btn-first" title="最初へ">|&lt;</button>
+      <button id="btn-prev" title="1手戻る">&lt;</button>
+      <button id="btn-stop" title="停止">■</button>
+      <button id="btn-next" title="1手進む">&gt;</button>
+      <button id="btn-last" title="最後へ">&gt;|</button>
+      <span class="move-counter" id="move-counter">0 / 0 手</span>
+      <span style="width:14px;"></span>
+      <button class="primary" id="btn-play" title="自動再生">▶ 再生</button>
+      <label style="font-size:12px;">速度:
+        <select id="speed-select">
+          <option value="1500">遅い</option>
+          <option value="800" selected>ふつう</option>
+          <option value="350">速い</option>
+        </select>
+      </label>
+    </div>
+    <div class="ocr-status-banner" id="ocr-status" style="display:none;"></div>
+    <div class="board-row">
+      <div class="mochi-col">
+        <div class="mochi-spacer"></div>
+        <div class="mochigoma-vertical" id="mochigoma-vertical"></div>
+      </div>
+      <div class="board-wrap">
+        <div class="file-labels" id="file-labels"></div>
+        <div class="corner"></div>
+        <div class="board" id="board"></div>
+        <div class="rank-labels" id="rank-labels"></div>
+      </div>
+    </div>
+  </div>
+  <div class="movelist-column">
+    <div class="card" id="edit-tools-card" style="display:none;">
+      <h2>盤面修正</h2>
+      <div class="row name-fields" style="margin-bottom:8px;">
+        <label>先手: <input type="text" id="edit-sente-name" placeholder="例）藤井聡太"></label>
+        <label>後手: <input type="text" id="edit-gote-name" placeholder="例）伊藤匠"></label>
+      </div>
+      <div class="row" style="align-items:stretch; margin-bottom:10px;">
+        <div class="edit-delete-zone" id="edit-delete-zone" style="flex:1; margin-bottom:0;">🗑 ここにドラッグで削除</div>
+        <button id="btn-emphasis" style="flex:0 0 auto;">強調</button>
+      </div>
+      <div class="edit-supply-section">
+        <h3>不足している駒</h3>
+        <div class="edit-supply-list" id="edit-supply-list"></div>
+        <p class="status-line edit-supply-empty" id="edit-supply-empty" style="display:none;">不足している駒はありません。</p>
+      </div>
+      <div class="edit-hand-panel" id="edit-hand-panel" style="display:none; margin-top:8px;"></div>
+    </div>
+    <div class="card" id="movelist-card">
+      <h2>指し手一覧</h2>
+      <div class="move-list" id="move-list">
+        <table class="move-table">
+          <thead><tr><th class="num-col"></th><th>先手</th><th class="num-col"></th><th>後手</th></tr></thead>
+          <tbody id="move-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="embed-modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <h2>埋め込み用HTMLタグ</h2>
+    <div class="hint">生成されたタグをコピーして、他のサイトのHTMLに貼り付けてください。｜&lt;・&lt;・■・&gt;・&gt;|・▶再生の操作は、埋め込み先のページでもそのまま使えます。</div>
+    <textarea id="embed-output" readonly rows="14" style="margin-top:8px;"></textarea>
+    <div class="row" style="margin-top:8px; justify-content:flex-end;">
+      <button class="primary" id="btn-embed-copy">コピーする</button>
+      <button id="btn-embed-close">閉じる</button>
+    </div>
+    <div class="status-line" id="embed-copy-status"></div>
+  </div>
+</div>
+<div class="modal-overlay" id="iframe-modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <h2>iframeで埋め込む</h2>
+    <div class="hint">
+      1つの「ビューアページ」をGitHub Pagesに<b>最初の1回だけ</b>アップロードしておけば、以後は棋譜ごとにファイルを作り直したりアップロードし直したりする必要はありません。棋譜のデータはURLの末尾（#以降）に載せて渡すので、②のボタンを押すだけで対局ごとのURL・iframeタグをその場で作れます。
+    </div>
+    <h2 style="margin-top:14px;">① ビューアページの準備（最初の1回だけ）</h2>
+    <div class="row" style="margin-top:4px;">
+      <button class="primary" id="btn-viewer-download">ビューアページをダウンロード</button>
+    </div>
+    <div class="status-line" id="viewer-download-status"></div>
+    <div class="hint">
+      1. GitHub (github.com) で新しいリポジトリを作成する（Public、README追加は任意）。まだお持ちでなければ、以前ご案内した手順と同じです。<br>
+      2. リポジトリ画面の「Add file」→「Upload files」で、上でダウンロードしたファイル（shogi_viewer.html）をアップロードしてCommit。<br>
+      3. リポジトリの「Settings」→左メニュー「Pages」を開き、「Source」を「Deploy from a branch」、「Branch」を「main」/「/(root)」にしてSave。<br>
+      4. 少し待つと「Your site is live at https://ユーザー名.github.io/リポジトリ名/」と表示されるので、末尾にファイル名を足したURL（例: https://ユーザー名.github.io/リポジトリ名/shogi_viewer.html）を下に保存してください。このURLは今後ずっと使い回します。
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <input type="text" id="viewer-base-url" placeholder="例）https://ユーザー名.github.io/リポジトリ名/shogi_viewer.html" style="flex:1; font-size:13px; padding:6px; border:1px solid var(--panel-border); border-radius:4px; font-family:inherit;">
+      <button class="primary" id="btn-viewer-url-save">保存</button>
+    </div>
+    <div class="status-line" id="viewer-url-status"></div>
+    <h2 style="margin-top:14px;">② この棋譜のURL・iframeタグを作る</h2>
+    <div class="hint">①を1度済ませていれば、以後はここだけで完結します。棋譜を読み込み直すたびにこのボタンを押してください。</div>
+    <div class="row" style="margin-top:4px;">
+      <button class="primary" id="btn-iframe-generate">URL・iframeタグを生成</button>
+    </div>
+    <div class="status-line" id="iframe-generate-status"></div>
+    <textarea id="iframe-output" rows="4" style="margin-top:8px;"></textarea>
+    <div class="row" style="margin-top:8px; justify-content:flex-end;">
+      <button class="primary" id="btn-iframe-copy">コピーする</button>
+      <button id="btn-iframe-close">閉じる</button>
+    </div>
+    <div class="status-line" id="iframe-copy-status"></div>
+  </div>
+</div>
+<div class="modal-overlay" id="apikey-modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <h2>Gemini APIキー設定</h2>
+    <div class="hint">盤面読み取り（OCR）にはGoogleのGemini AIを使用します。<a href="https://aistudio.google.com" target="_blank">AI Studio</a>で無料のAPIキーを取得し、下に貼り付けて「保存」を押してください。保存したキーはこの端末のブラウザ内にのみ保存され、外部に送信されることはありません。</div>
+    <div class="row" style="margin-top:8px;">
+      <input type="text" id="gemini-key-input" placeholder="APIキーを入力" style="flex:1;">
+      <button class="primary" id="gemini-key-save">保存</button>
+    </div>
+    <div class="status-line" id="gemini-key-status" style="margin-top:6px;"></div>
+    <div class="row" style="margin-top:8px; justify-content:flex-end;">
+      <button id="btn-apikey-close">閉じる</button>
+    </div>
+  </div>
+</div>
+<script>
+// Shogi engine: board model + kifu (Japanese notation / KIF) parser
+// Works in both Node (for testing) and browser (attaches to window.ShogiEngine).
+(function (root, factory) {
+  const mod = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = mod;
+  if (typeof window !== 'undefined') window.ShogiEngine = mod;
+})(this, function () {
+  'use strict';
+
+  const KANJI = {
+    FU: '歩', KY: '香', KE: '桂', GI: '銀', KI: '金', KA: '角', HI: '飛', OU: '玉',
+    TO: 'と', NY: '成香', NK: '成桂', NG: '成銀', UM: '馬', RY: '龍'
+  };
+  const ALT_NAMES = {
+    '王': 'OU', '玉': 'OU',
+    '歩': 'FU', '步': 'FU',
+    '香': 'KY',
+    '桂': 'KE',
+    '銀': 'GI',
+    '金': 'KI',
+    '角': 'KA',
+    '飛': 'HI',
+    'と': 'TO', 'ト': 'TO',
+    '成香': 'NY',
+    '成桂': 'NK',
+    '成銀': 'NG', '全': 'NG',
+    '馬': 'UM',
+    '龍': 'RY', '竜': 'RY'
+  };
+  const NAME_LIST = Object.keys(ALT_NAMES).sort((a, b) => b.length - a.length).map(k => [k, ALT_NAMES[k]]);
+
+  const PROMOTE = { FU: 'TO', KY: 'NY', KE: 'NK', GI: 'NG', KA: 'UM', HI: 'RY' };
+  const DEMOTE = { TO: 'FU', NY: 'KY', NK: 'KE', NG: 'GI', UM: 'KA', RY: 'HI' };
+  function baseType(t) { return DEMOTE[t] || t; }
+  function canPromote(t) { return !!PROMOTE[t]; }
+
+  const ZEN_DIGIT = '０１２３４５６７８９';
+  const KAN_DIGIT = '一二三四五六七八九';
+  function zenToInt(ch) {
+    const i = ZEN_DIGIT.indexOf(ch);
+    if (i >= 0) return i;
+    const a = '0123456789'.indexOf(ch);
+    return a >= 0 ? a : -1;
+  }
+  function kanToInt(ch) {
+    const i = KAN_DIGIT.indexOf(ch);
+    return i >= 0 ? i + 1 : -1;
+  }
+
+  function movePatterns(type, owner) {
+    const f = owner === 'b' ? -1 : 1;
+    switch (type) {
+      case 'FU': return { dirs: [[0, f]], slide: false };
+      case 'KY': return { dirs: [[0, f]], slide: true };
+      case 'KE': return { dirs: [[-1, f * 2], [1, f * 2]], slide: false };
+      case 'GI': return { dirs: [[0, f], [-1, f], [1, f], [-1, -f], [1, -f]], slide: false };
+      case 'KI': case 'TO': case 'NY': case 'NK': case 'NG':
+        return { dirs: [[0, f], [-1, f], [1, f], [-1, 0], [1, 0], [0, -f]], slide: false };
+      case 'KA': return { dirs: [[-1, -1], [1, -1], [-1, 1], [1, 1]], slide: true };
+      case 'HI': return { dirs: [[0, -1], [0, 1], [-1, 0], [1, 0]], slide: true };
+      case 'OU': return { dirs: [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]], slide: false };
+      case 'UM': return { dirs: [[-1, -1], [1, -1], [-1, 1], [1, 1]], slide: true, extra: [[0, -1], [0, 1], [-1, 0], [1, 0]] };
+      case 'RY': return { dirs: [[0, -1], [0, 1], [-1, 0], [1, 0]], slide: true, extra: [[-1, -1], [1, -1], [-1, 1], [1, 1]] };
+      default: return { dirs: [], slide: false };
+    }
+  }
+
+  function initialState() {
+    const board = {};
+    function set(file, rank, type, owner) { board[file + ',' + rank] = { type, owner }; }
+    const backRow = ['KY', 'KE', 'GI', 'KI', 'OU', 'KI', 'GI', 'KE', 'KY'];
+    for (let file = 1; file <= 9; file++) set(file, 1, backRow[file - 1], 'w');
+    set(2, 2, 'KA', 'w'); set(8, 2, 'HI', 'w');
+    for (let file = 1; file <= 9; file++) set(file, 3, 'FU', 'w');
+    for (let file = 1; file <= 9; file++) set(file, 9, backRow[file - 1], 'b');
+    set(8, 8, 'KA', 'b'); set(2, 8, 'HI', 'b');
+    for (let file = 1; file <= 9; file++) set(file, 7, 'FU', 'b');
+    return { board, hands: { b: {}, w: {} }, turn: 'b', lastDest: null, history: [] };
+  }
+
+  function cloneState(state) {
+    return {
+      board: Object.assign({}, state.board),
+      hands: { b: Object.assign({}, state.hands.b), w: Object.assign({}, state.hands.w) },
+      turn: state.turn,
+      lastDest: state.lastDest,
+      history: state.history.slice()
+    };
+  }
+
+  function get(state, file, rank) { return state.board[file + ',' + rank]; }
+  function inBounds(file, rank) { return file >= 1 && file <= 9 && rank >= 1 && rank <= 9; }
+
+  function findCandidates(state, type, owner, destFile, destRank) {
+    const { dirs, slide, extra } = movePatterns(type, owner);
+    const candidates = [];
+    function scan(dirList, canSlide) {
+      for (const [dx, dy] of dirList) {
+        let file = destFile - dx, rank = destRank - dy;
+        if (!canSlide) {
+          if (inBounds(file, rank)) {
+            const p = get(state, file, rank);
+            if (p && p.type === type && p.owner === owner) candidates.push({ file, rank });
+          }
+          continue;
+        }
+        let cf = destFile, cr = destRank;
+        while (true) {
+          cf -= dx; cr -= dy;
+          if (!inBounds(cf, cr)) break;
+          const p = get(state, cf, cr);
+          if (p) {
+            if (p.type === type && p.owner === owner) candidates.push({ file: cf, rank: cr });
+            break;
+          }
+        }
+      }
+    }
+    scan(dirs, slide);
+    if (extra) scan(extra, false);
+    return candidates;
+  }
+
+  function tokenizeKifuText(text) {
+    text = text.replace(/同[\s　]+/g, '同');
+    // Some sources append per-move thinking time with no separator at all
+    // (e.g. "▲７四歩１８" = the move plus "18 seconds"), which can leave
+    // consecutive moves glued together with zero whitespace between them.
+    // Force a line break before every sente/gote marker so each move gets
+    // its own line before we tokenize; trailing digits are discarded later
+    // in parseToken.
+    if (/[▲△☗☖▼▽■□]/.test(text)) {
+      text = text.replace(/([▲△☗☖▼▽■□])/g, '\n$1');
+    }
+    const lines = text.split(/\r?\n/);
+    const tokens = [];
+    for (let rawLine of lines) {
+      let line = rawLine.trim();
+      if (!line) continue;
+      if (line.startsWith('*') || line.startsWith('#')) continue;
+      if (/^手数|^手合割|^先手|^後手|^下手|^上手|^場所|^開始|^終了|^棋戦|^戦型|^持ち時間/.test(line)) continue;
+      let m = line.match(/^(\d+)\s+(\S+)/);
+      if (m) { tokens.push(m[2]); continue; }
+      const parts = line.split(/[\s　]+/).filter(Boolean);
+      for (let part of parts) {
+        part = part.replace(/^\d+[\.\)]/, '');
+        if (!part) continue;
+        tokens.push(part);
+      }
+    }
+    return tokens;
+  }
+
+  const END_MARKERS = ['投了', '中断', '千日手', '持将棋', '切れ負け', '反則勝ち', '反則負け', '入玉勝ち', 'まで'];
+
+  function parseToken(token) {
+    let t = token;
+    t = t.replace(/^[▲△☗☖▼▽■□]/, '');
+    for (const marker of END_MARKERS) {
+      if (t.startsWith(marker)) return { end: marker };
+    }
+    if (!t) return null;
+
+    let same = false;
+    if (t[0] === '同') {
+      same = true;
+      t = t.slice(1);
+      t = t.replace(/^[　\s]+/, '');
+    }
+
+    let destFile = null, destRank = null;
+    if (!same) {
+      if (t.length < 2) return null;
+      const f = zenToInt(t[0]);
+      const r = kanToInt(t[1]);
+      if (f < 0 || r < 0) return null;
+      destFile = f;
+      destRank = r;
+      t = t.slice(2);
+    }
+
+    let pieceCode = null;
+    for (const [kanji, code] of NAME_LIST) {
+      if (t.startsWith(kanji)) { pieceCode = code; t = t.slice(kanji.length); break; }
+    }
+    if (!pieceCode) return null;
+
+    let isDrop = false, promote = false, noPromote = false;
+    let disambig = '';
+    let origin = null;
+
+    const parenMatch = t.match(/\((\d)(\d)\)/);
+    if (parenMatch) {
+      origin = { file: parseInt(parenMatch[1], 10), rank: parseInt(parenMatch[2], 10) };
+      t = t.replace(/\(\d\d\)/, '');
+    }
+
+    if (t.includes('打')) { isDrop = true; t = t.replace('打', ''); }
+    if (t.includes('不成')) { noPromote = true; t = t.replace('不成', ''); }
+    else if (t.includes('成')) { promote = true; t = t.replace('成', ''); }
+
+    // discard a trailing thinking-time annotation with no separator, e.g.
+    // "18", "(18)", "0:18" appended directly after the move text
+    t = t.replace(/[\(（]?[0-9０-９]{1,4}(?:[:：][0-9０-９]{1,2})?[\)）]?\s*$/, '');
+
+    disambig = t.replace(/[^上引寄直左右]/g, '');
+
+    return { same, destFile, destRank, pieceCode, isDrop, promote, noPromote, disambig, origin };
+  }
+
+  // destFile/destRank = target square; candidates = possible origins.
+  // 左/右 are from the mover's own facing direction (mirrored for white).
+  // 上/引/寄/直 classify the move itself by comparing origin rank/file to the destination.
+  function pickCandidate(candidates, owner, disambig, destFile, destRank) {
+    if (candidates.length <= 1) return candidates[0] || null;
+    let list = candidates.slice();
+    if (disambig.includes('左') || disambig.includes('右')) {
+      const wantRight = disambig.includes('右');
+      list.sort((a, b) => owner === 'b' ? a.file - b.file : b.file - a.file);
+      const picked = wantRight ? list[0] : list[list.length - 1];
+      if (picked) return picked;
+    }
+    if (disambig.includes('上')) {
+      const advancing = list.find(c => owner === 'b' ? c.rank > destRank : c.rank < destRank);
+      if (advancing) return advancing;
+    }
+    if (disambig.includes('引')) {
+      const retreating = list.find(c => owner === 'b' ? c.rank < destRank : c.rank > destRank);
+      if (retreating) return retreating;
+    }
+    if (disambig.includes('寄')) {
+      const sideways = list.find(c => c.rank === destRank);
+      if (sideways) return sideways;
+    }
+    if (disambig.includes('直')) {
+      const straight = list.find(c => c.file === destFile);
+      if (straight) return straight;
+    }
+    return list[0];
+  }
+
+  function applyMove(state, parsed, warnings) {
+    if (parsed.same) {
+      if (!state.lastDest) { warnings.push('「同」の直前の手が見つかりません'); return null; }
+      parsed.destFile = state.lastDest.file;
+      parsed.destRank = state.lastDest.rank;
+    }
+    const prevDest = state.lastDest; // capture before this move overwrites it, for "同" display
+    const owner = state.turn;
+    const type = parsed.pieceCode;
+    const destKey = parsed.destFile + ',' + parsed.destRank;
+    let fromSq = null;
+    let isDrop = parsed.isDrop;
+
+    if (isDrop) {
+      if (!state.hands[owner][type] || state.hands[owner][type] <= 0) {
+        warnings.push(KANJI[type] + '打: 持ち駒にありません');
+        return null;
+      }
+    } else if (parsed.origin) {
+      fromSq = { file: parsed.origin.file, rank: parsed.origin.rank };
+      const p = get(state, fromSq.file, fromSq.rank);
+      if (!p || p.owner !== owner) {
+        warnings.push('指定された移動元 (' + fromSq.file + fromSq.rank + ') に駒がありません');
+      }
+    } else {
+      const cands = findCandidates(state, type, owner, parsed.destFile, parsed.destRank);
+      if (cands.length === 0) {
+        // No board piece can reach this square - many casual/simplified
+        // transcriptions omit the "打" marker even for hand drops, so fall
+        // back to treating this as a drop if the player actually holds the
+        // piece and the target square is empty (drops can never capture).
+        const destOccupied = !!get(state, parsed.destFile, parsed.destRank);
+        if (!destOccupied && state.hands[owner][type] > 0) {
+          isDrop = true;
+        } else {
+          warnings.push(KANJI[type] + ' を ' + parsed.destFile + parsed.destRank + ' に動かせる駒が見つかりません');
+          return null;
+        }
+      } else {
+        fromSq = pickCandidate(cands, owner, parsed.disambig, parsed.destFile, parsed.destRank);
+        if (cands.length > 1 && !parsed.disambig) {
+          warnings.push(KANJI[type] + parsed.destFile + parsed.destRank + ': 移動元が複数候補あり、推定しました');
+        }
+      }
+    }
+    parsed.isDrop = isDrop; // keep notation/record in sync with any fallback above
+
+    const captured = get(state, parsed.destFile, parsed.destRank);
+    if (captured) {
+      const bt = baseType(captured.type);
+      state.hands[owner][bt] = (state.hands[owner][bt] || 0) + 1;
+    }
+
+    let finalType = type;
+    if (isDrop) {
+      state.hands[owner][type] -= 1;
+      if (state.hands[owner][type] <= 0) delete state.hands[owner][type];
+    } else if (fromSq) {
+      delete state.board[fromSq.file + ',' + fromSq.rank];
+      if (parsed.promote && canPromote(type)) finalType = PROMOTE[type];
+    }
+    state.board[destKey] = { type: finalType, owner };
+
+    const record = {
+      color: owner, type: finalType, baseType: type, from: fromSq, to: { file: parsed.destFile, rank: parsed.destRank },
+      drop: isDrop, promoted: parsed.promote, captured: captured ? { type: captured.type, owner: captured.owner } : null,
+      notation: notationFor(parsed, owner, prevDest)
+    };
+    state.history.push(record);
+    state.lastDest = { file: parsed.destFile, rank: parsed.destRank };
+    state.turn = owner === 'b' ? 'w' : 'b';
+    return record;
+  }
+
+  function notationFor(parsed, owner, prevDest) {
+    const mark = owner === 'b' ? '▲' : '△';
+    const isSameSquare = prevDest && prevDest.file === parsed.destFile && prevDest.rank === parsed.destRank;
+    let s;
+    if (isSameSquare) {
+      s = mark + '同' + KANJI[parsed.pieceCode];
+    } else {
+      const fileStr = ZEN_DIGIT[parsed.destFile] || parsed.destFile;
+      const rankStr = KAN_DIGIT[parsed.destRank - 1] || parsed.destRank;
+      s = mark + fileStr + rankStr + KANJI[parsed.pieceCode];
+    }
+    if (parsed.isDrop) s += '打';
+    if (parsed.promote) s += '成';
+    if (parsed.noPromote) s += '不成';
+    return s;
+  }
+
+  function extractPlayerNames(text) {
+    const names = {};
+    let m = text.match(/^\s*先手[：:]\s*(.+?)\s*$/m);
+    if (m && m[1]) names.b = m[1];
+    m = text.match(/^\s*下手[：:]\s*(.+?)\s*$/m);
+    if (m && m[1] && !names.b) names.b = m[1];
+    m = text.match(/^\s*後手[：:]\s*(.+?)\s*$/m);
+    if (m && m[1]) names.w = m[1];
+    m = text.match(/^\s*上手[：:]\s*(.+?)\s*$/m);
+    if (m && m[1] && !names.w) names.w = m[1];
+    return names;
+  }
+
+  function parseAndApplyAll(kifuText) {
+    const state = initialState();
+    const tokens = tokenizeKifuText(kifuText);
+    const warnings = [];
+    let ended = null;
+    for (const tok of tokens) {
+      const parsed = parseToken(tok);
+      if (!parsed) { warnings.push('解析できませんでした: "' + tok + '"'); continue; }
+      if (parsed.end) { ended = parsed.end; continue; }
+      const rec = applyMove(state, parsed, warnings);
+      if (!rec) warnings.push('適用できませんでした: "' + tok + '"');
+    }
+    return { state, warnings, ended };
+  }
+
+  function buildGame(kifuText) {
+    const state = initialState();
+    const tokens = tokenizeKifuText(kifuText);
+    const warnings = [];
+    const moves = [];
+    let ended = null;
+    for (const tok of tokens) {
+      const parsed = parseToken(tok);
+      if (!parsed) { warnings.push('解析できませんでした: "' + tok + '"'); continue; }
+      if (parsed.end) { ended = parsed.end; continue; }
+      const rec = applyMove(state, parsed, warnings);
+      if (rec) moves.push(rec);
+      else warnings.push('適用できませんでした: "' + tok + '"');
+    }
+    const names = extractPlayerNames(kifuText);
+    return { moves, warnings, ended, finalState: state, names };
+  }
+
+  return {
+    KANJI, ALT_NAMES, PROMOTE, DEMOTE, baseType, canPromote,
+    initialState, cloneState, get, inBounds,
+    movePatterns, findCandidates,
+    tokenizeKifuText, parseToken, pickCandidate, applyMove,
+    parseAndApplyAll, buildGame, extractPlayerNames
+  };
+});
+</script><script>
+(function () {
+  'use strict';
+  var E = window.ShogiEngine;
+  var ZEN = '０１２３４５６７８９';
+  var KAN = '一二三四五六七八九';
+  var PROMOTED_TYPES = { TO: 1, NY: 1, NK: 1, NG: 1, UM: 1, RY: 1 };
+  var STACKED_TYPES = { NY: 1, NK: 1, NG: 1 };
+  var HAND_ORDER = ['HI', 'KA', 'KI', 'GI', 'KE', 'KY', 'FU'];
+
+  var boardEl = document.getElementById('board');
+  var fileLabelsEl = document.getElementById('file-labels');
+  var rankLabelsEl = document.getElementById('rank-labels');
+  var mochiVerticalEl = document.getElementById('mochigoma-vertical');
+  var moveCounterEl = document.getElementById('move-counter');
+  var moveTableBodyEl = document.getElementById('move-table-body');
+  var warningsEl = document.getElementById('warnings');
+  var fileStatusEl = document.getElementById('file-status');
+  var kifuTextEl = document.getElementById('kifu-text');
+  var speedSelect = document.getElementById('speed-select');
+  var senteNameInput = document.getElementById('input-sente-name');
+  var goteNameInput = document.getElementById('input-gote-name');
+  var editSenteNameInput = document.getElementById('edit-sente-name');
+  var editGoteNameInput = document.getElementById('edit-gote-name');
+
+  var cellEls = {}; // "file,rank" -> element
+
+  // build file labels (9 -> 1, left to right)
+  for (var f = 9; f >= 1; f--) {
+    var d = document.createElement('div');
+    d.textContent = ZEN[f];
+    fileLabelsEl.appendChild(d);
+  }
+  // build rank labels (1 -> 9, top to bottom), kanji
+  for (var r = 1; r <= 9; r++) {
+    var rd = document.createElement('div');
+    rd.textContent = KAN[r - 1];
+    rankLabelsEl.appendChild(rd);
+  }
+  // build board cells
+  for (var rank = 1; rank <= 9; rank++) {
+    for (var file = 9; file >= 1; file--) {
+      var cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.file = file;
+      cell.dataset.rank = rank;
+      (function (f2, r2) {
+        var key = f2 + ',' + r2;
+        // 盤面修正はドラッグ&ドロップで行う（クリックによる駒選択ピッカーは
+        // 廃止）。マス自体のクリックは「最後にクリックしたマス」の目印
+        // （ベージュ表示、強調ボタンの対象）を更新するだけ。駒の移動/
+        // 成り切替は paintBoard側で駒<span>に付与するドラッグ/クリック
+        // ハンドラで行う（駒をクリックした場合はそちらが先に発火し、
+        // 同じく目印も更新した上で成り/先後の切り替えも行う）。
+        cell.addEventListener('click', function () {
+          if (mode !== 'custom') return;
+          selectedCell = key;
+          renderCustom();
+        });
+        cell.addEventListener('dragover', function (e) {
+          if (mode === 'custom') e.preventDefault();
+        });
+        cell.addEventListener('dragenter', function () {
+          if (mode === 'custom') cell.classList.add('drag-over');
+        });
+        cell.addEventListener('dragleave', function () {
+          cell.classList.remove('drag-over');
+        });
+        cell.addEventListener('drop', function (e) {
+          cell.classList.remove('drag-over');
+          if (mode !== 'custom') return;
+          e.preventDefault();
+          handleDropOnBoard(e.dataTransfer.getData('text/plain'), key);
+        });
+      })(file, rank);
+      boardEl.appendChild(cell);
+      cellEls[file + ',' + rank] = cell;
+    }
+  }
+
+  var game = { moves: [], warnings: [], ended: null, names: {} };
+  var currentIndex = 0;
+  var playTimer = null;
+  var moveCellEls = []; // index (0-based, matching game.moves) -> <td>
+
+  // --- Custom board mode (OCR-loaded or manually built position) ---
+  var mode = 'kifu'; // 'kifu' | 'custom'
+  var customState = null; // { board: {...}, hands: { b: {...}, w: {...} } }
+  // 盤面カスタマイズ中に最後にクリックしたマス（"file,rank"）。あくまで
+  // 編集中の目印（ベージュ表示）と「強調」ボタンの対象を覚えておくためだけ
+  // のもので、紙面用出力・ウェブ用出力には一切影響しない。
+  var selectedCell = null;
+  var HAND_EDIT_TYPES = ['HI', 'KA', 'KI', 'GI', 'KE', 'KY', 'FU'];
+
+  // Hard ceiling on how many of a given (base) piece type can exist across
+  // both players' boards + hands combined - a fixed shogi set: 2 of
+  // everything except OU/HI/KA which come 1-per-side, and 9 pawns per
+  // side. Shared by the OCR sanity check and by the drag-and-drop board
+  // editor's supply column / over-quota highlighting.
+  var PIECE_SET_MAX = { OU: 2, HI: 2, KA: 2, KI: 4, GI: 4, KE: 4, KY: 4, FU: 18 };
+
+  // Totals every piece by its BASE type (promoted pieces count under their
+  // unpromoted type, e.g. と counts as 歩) across the board and both
+  // hands, then compares against PIECE_SET_MAX: over[type] = how many too
+  // many exist (should never really happen outside of misreads), and
+  // deficient[type] = how many of that type are not yet placed anywhere
+  // (available to place from the board editor's supply column).
+  function computeQuotaStatus(board, hands) {
+    var totals = {};
+    Object.keys(board || {}).forEach(function (key) {
+      var bt = E.baseType(board[key].type);
+      totals[bt] = (totals[bt] || 0) + 1;
+    });
+    ['b', 'w'].forEach(function (owner) {
+      var hand = (hands && hands[owner]) || {};
+      Object.keys(hand).forEach(function (type) {
+        var bt = E.baseType(type);
+        totals[bt] = (totals[bt] || 0) + (hand[type] || 0);
+      });
+    });
+    var over = {}, deficient = {};
+    Object.keys(PIECE_SET_MAX).forEach(function (type) {
+      var n = totals[type] || 0;
+      var max = PIECE_SET_MAX[type];
+      if (n > max) over[type] = n - max;
+      else if (n < max) deficient[type] = max - n;
+    });
+    return { totals: totals, over: over, deficient: deficient };
+  }
+
+  // Updated once per renderCustom() call, read by paintBoard (board piece
+  // red-highlighting) and renderEditHandPanel/renderEditSupply.
+  var quotaStatus = { totals: {}, over: {}, deficient: {} };
+
+  function computeStateAt(index) {
+    var state = E.initialState();
+    for (var i = 0; i < index; i++) {
+      var mv = game.moves[i];
+      applyRecordToState(state, mv);
+    }
+    return state;
+  }
+
+  // Re-apply a previously computed move record directly (avoids re-parsing/disambiguating).
+  function applyRecordToState(state, mv) {
+    if (mv.drop) {
+      state.hands[mv.color][mv.baseType] -= 1;
+      if (state.hands[mv.color][mv.baseType] <= 0) delete state.hands[mv.color][mv.baseType];
+    } else if (mv.from) {
+      delete state.board[mv.from.file + ',' + mv.from.rank];
+    }
+    if (mv.captured) {
+      var bt = E.baseType(mv.captured.type);
+      state.hands[mv.color][bt] = (state.hands[mv.color][bt] || 0) + 1;
+    }
+    state.board[mv.to.file + ',' + mv.to.rank] = { type: mv.type, owner: mv.color };
+  }
+
+  function pieceLabel(type) {
+    return E.KANJI[type];
+  }
+
+  // convert a small integer (1-18) to a kanji numeral, for hand-piece counts
+  function kanjiNum(n) {
+    if (n <= 0) return '';
+    if (n <= 9) return KAN[n - 1];
+    if (n < 20) return n === 10 ? '十' : ('十' + KAN[n - 11]);
+    return String(n); // fallback, practically unreachable
+  }
+
+  // Clears the board and draws pieces from a plain board map (state.board
+  // for kifu playback, or customState.board for the OCR/manual-edit mode).
+  // editable (true only for renderCustom() while 修正 mode is active) adds
+  // drag-and-drop + click-to-cycle behavior and over-quota red highlighting
+  // to each piece; kifu playback always passes a falsy editable so replayed
+  // positions are never draggable.
+  function paintBoard(boardMap, editable) {
+    for (var key in cellEls) {
+      cellEls[key].innerHTML = '';
+      cellEls[key].classList.remove('last-move');
+      // 「最後にクリックしたマス」の目印は盤面カスタマイズ中のみ有効。
+      cellEls[key].classList.toggle('selected', editable && key === selectedCell);
+    }
+    for (var k2 in boardMap) {
+      var p = boardMap[k2];
+      var cell = cellEls[k2];
+      if (!cell) continue;
+      var span = document.createElement('span');
+      var isPromoted = !!PROMOTED_TYPES[p.type];
+      var overQuota = editable && !!quotaStatus.over[E.baseType(p.type)];
+      span.className = 'piece' + (p.owner === 'w' ? ' white-owner' : '') + (isPromoted ? ' promoted' : '') +
+        (overQuota ? ' over-quota' : '') + (p.emphasis ? ' emphasis' : '');
+      var label = pieceLabel(p.type);
+      if (STACKED_TYPES[p.type]) {
+        // two-character promoted pieces (成香/成桂/成銀) are drawn as "成"
+        // stacked above the base piece character, not side by side.
+        span.classList.add('stacked');
+        Array.from(label).forEach(function (ch) {
+          var line = document.createElement('span');
+          line.textContent = ch;
+          span.appendChild(line);
+        });
+      } else {
+        span.textContent = label;
+      }
+      if (editable) {
+        span.classList.add('draggable-piece');
+        span.draggable = true;
+        (function (key3) {
+          span.addEventListener('dragstart', function (e) {
+            e.dataTransfer.setData('text/plain', 'board:' + key3);
+            e.dataTransfer.effectAllowed = 'move';
+          });
+          span.addEventListener('click', function (e) {
+            e.stopPropagation();
+            selectedCell = key3;
+            cycleBoardPiece(key3);
+          });
+        })(k2);
+      }
+      cell.appendChild(span);
+    }
+  }
+
+  // Cycles a placed board piece through: 先手(不成)→先手(成)→後手(不成)→
+  // 後手(成)→(先手に戻る)。玉/金など成れない駒は先手/後手の2状態のみを
+  // 交互に切り替える。「強調」フラグは駒そのものに属する状態なので、
+  // 切り替え後も引き継ぐ。
+  function cycleBoardPiece(key) {
+    var p = customState.board[key];
+    if (!p) return;
+    var base = E.baseType(p.type);
+    var isPromotedNow = p.type !== base;
+    var next;
+    if (E.canPromote(base)) {
+      if (p.owner === 'b' && !isPromotedNow) next = { type: E.PROMOTE[base], owner: 'b' };
+      else if (p.owner === 'b' && isPromotedNow) next = { type: base, owner: 'w' };
+      else if (p.owner === 'w' && !isPromotedNow) next = { type: E.PROMOTE[base], owner: 'w' };
+      else next = { type: base, owner: 'b' };
+    } else {
+      next = { type: p.type, owner: p.owner === 'b' ? 'w' : 'b' };
+    }
+    if (p.emphasis) next.emphasis = true;
+    customState.board[key] = next;
+    renderCustom();
+  }
+
+  // Handles a drop on a board square, from either another board square
+  // ("board:file,rank") or the supply column ("supply:TYPE").
+  function handleDropOnBoard(src, targetKey) {
+    if (!src) return;
+    if (src.indexOf('supply:') === 0) {
+      // A not-yet-placed supply piece always lands as an unpromoted sente
+      // (先手) piece - the user can click it afterward to cycle through
+      // promotion/owner if a different state is needed. If the target is
+      // already occupied the drop is ignored (no piece to swap with).
+      if (customState.board[targetKey]) return;
+      customState.board[targetKey] = { type: src.slice(7), owner: 'b' };
+    } else if (src.indexOf('board:') === 0) {
+      var sourceKey = src.slice(6);
+      if (sourceKey === targetKey) return;
+      var moving = customState.board[sourceKey];
+      if (!moving) return;
+      var occupant = customState.board[targetKey];
+      if (occupant) {
+        // Dropping onto an occupied square swaps the two pieces in place
+        // (no piece is ever silently deleted by a board-to-board drag).
+        customState.board[sourceKey] = occupant;
+        customState.board[targetKey] = moving;
+      } else {
+        delete customState.board[sourceKey];
+        customState.board[targetKey] = moving;
+      }
+    } else {
+      return;
+    }
+    renderCustom();
+  }
+
+  function render() {
+    var state = computeStateAt(currentIndex);
+    paintBoard(state.board, false);
+    // last move highlight
+    if (currentIndex > 0) {
+      var lastMv = game.moves[currentIndex - 1];
+      var lastKey = lastMv.to.file + ',' + lastMv.to.rank;
+      if (cellEls[lastKey]) cellEls[lastKey].classList.add('last-move');
+    }
+    // mochigoma (vertical panel, gote/white on top, sente/black on bottom)
+    var effNames = {
+      b: (senteNameInput.value && senteNameInput.value.trim()) || (game.names && game.names.b),
+      w: (goteNameInput.value && goteNameInput.value.trim()) || (game.names && game.names.w)
+    };
+    renderMochiVertical(state.hands, effNames);
+    // counter
+    moveCounterEl.textContent = currentIndex + ' / ' + game.moves.length + ' 手';
+    // move table highlight
+    moveCellEls.forEach(function (td, idx) {
+      if (td) td.classList.toggle('current', idx === currentIndex - 1);
+    });
+    if (currentIndex > 0 && moveCellEls[currentIndex - 1]) {
+      moveCellEls[currentIndex - 1].scrollIntoView({ block: 'nearest' });
+    }
+    updateButtons();
+  }
+
+  // Build one character "line" as its own div, so gote's characters can be
+  // individually rotated 180deg to match the flipped pieces on the board.
+  function buildChar(text, cls, flip) {
+    var el = document.createElement('div');
+    el.className = 'mg-char' + (cls ? ' ' + cls : '') + (flip ? ' flip' : '');
+    el.textContent = text;
+    return el;
+  }
+
+  function buildNameBlock(name, fallbackName, flip) {
+    var wrap = document.createElement('div');
+    wrap.className = 'mg-name';
+    var label = name || fallbackName;
+    Array.from(label).forEach(function (ch) {
+      wrap.appendChild(buildChar(ch, null, flip));
+    });
+    return wrap;
+  }
+
+  // Build the ordered list of hand-piece "lines" (piece char, then a count
+  // char when there are 2 or more of that type).
+  function buildHandLines(hand) {
+    var lines = [];
+    HAND_ORDER.forEach(function (type) {
+      var n = hand[type];
+      if (n && n > 0) {
+        lines.push({ text: E.KANJI[type], cls: null });
+        if (n >= 2) lines.push({ text: kanjiNum(n), cls: 'mg-count' });
+      }
+    });
+    return lines;
+  }
+
+  // The mochigoma panel's height is fixed (locked to the board's own
+  // height), so a player holding many captured pieces must never scroll -
+  // instead, once a single column would exceed MOCHI_MAX_ROWS_PER_COL rows,
+  // the line list is split across as many side-by-side columns as needed
+  // (not just a fixed two) so everything always fits within that fixed
+  // height, growing the panel wider (to the left of the board) instead.
+  var MOCHI_MAX_ROWS_PER_COL = 6;
+
+  // On-screen panel only: name の行数と持ち駒の行数を合わせて1列あたり
+  // この行数に収まるよう折り返す（紙面用出力・埋め込み用は対象外なので
+  // MOCHI_MAX_ROWS_PER_COL は変更しない）。
+  var MOCHI_NAME_HAND_TOTAL_ROWS = 7;
+
+  // Returns how many columns buildHandBlock will use for a given line
+  // list. rowsPerCol lets a caller override the per-column row cap
+  // (defaults to MOCHI_MAX_ROWS_PER_COL).
+  function handColumnCount(lines, rowsPerCol) {
+    var cap = rowsPerCol || MOCHI_MAX_ROWS_PER_COL;
+    return lines.length > cap ? Math.ceil(lines.length / cap) : 1;
+  }
+
+  // Groups the flat hand-piece "lines" into per-piece-type items (1 row
+  // for a single piece, or 2 rows - piece char + kanji count - when 2 or
+  // more are held), so a multi-column split can never separate a piece's
+  // character from its own count character onto different columns (e.g.
+  // "銀" and "二" must always stay together).
+  function groupHandLinesIntoItems(lines) {
+    var items = [];
+    for (var i = 0; i < lines.length; ) {
+      if (lines[i + 1] && lines[i + 1].cls === 'mg-count') {
+        items.push([lines[i], lines[i + 1]]);
+        i += 2;
+      } else {
+        items.push([lines[i]]);
+        i += 1;
+      }
+    }
+    return items;
+  }
+
+  // Greedily packs whole items (never splitting one across columns) into
+  // columns of at most rowsPerCol rows each. If a single item is itself
+  // longer than rowsPerCol, it still gets placed alone in an (otherwise
+  // empty) column rather than looping forever or being split.
+  function packHandItemsIntoColumns(items, rowsPerCol) {
+    var cols = [[]];
+    var rowsInCol = 0;
+    items.forEach(function (item) {
+      if (rowsInCol > 0 && rowsInCol + item.length > rowsPerCol) {
+        cols.push([]);
+        rowsInCol = 0;
+      }
+      item.forEach(function (l) { cols[cols.length - 1].push(l); });
+      rowsInCol += item.length;
+    });
+    return cols;
+  }
+
+  function buildHandBlock(hand, flip, rowsPerCol) {
+    var lines = buildHandLines(hand);
+    var wrap = document.createElement('div');
+    wrap.className = 'mg-hand';
+    var cap = rowsPerCol || MOCHI_MAX_ROWS_PER_COL;
+    var packedCols = packHandItemsIntoColumns(groupHandLinesIntoItems(lines), cap);
+    if (packedCols.length > 1) {
+      wrap.classList.add('mg-hand-split');
+      var domCols = packedCols.map(function (colLines) {
+        var col = document.createElement('div');
+        col.className = 'mg-hand-col';
+        colLines.forEach(function (l) { col.appendChild(buildChar(l.text, l.cls, flip)); });
+        return col;
+      });
+      // 縦書きの多段組みと同じく、右側の列から読み始めて左に進む。先手
+      // (flip=false)はそのままの見た目で読むので、col0(最初の行)を右側に
+      // 出すには自然な順でappendすればよい（CSSのrow-reverseが先頭の
+      // DOM要素を右端に置く）。後手(flip=true)は各文字を個別に180度回転
+      // させて表示し、読み手は全体を180度回転させたつもりで読むため、
+      // 回転後に右側が1列目になるよう、回転前（物理的な配置）では左右を
+      // 逆にしておく必要がある。
+      var orderedCols = flip ? domCols.slice().reverse() : domCols;
+      orderedCols.forEach(function (col) { wrap.appendChild(col); });
+    } else {
+      lines.forEach(function (l) { wrap.appendChild(buildChar(l.text, l.cls, flip)); });
+    }
+    return wrap;
+  }
+
+  // Builds one player's half of the panel: marker, name, hand pieces (in
+  // that DOM order). For gote this half is laid out with flex-direction:
+  // column-reverse and anchored to "bottom: 50%+", so it visually renders
+  // as [hand pieces (top)] [name] [marker (bottom, closest to center)] and
+  // grows upward as captured pieces increase. For sente the half uses the
+  // normal column direction anchored to "top: 50%+", rendering as
+  // [marker (top, closest to center)] [name] [hand pieces (bottom)] and
+  // grows downward. This keeps both markers fixed near the board's
+  // vertical center regardless of how many pieces are captured.
+  function buildHalf(marker, name, fallbackName, hand, flip, extraClass) {
+    var half = document.createElement('div');
+    half.className = 'mg-half ' + extraClass;
+    var nameLen = Array.from(name || fallbackName).length;
+    var handRowsPerCol = Math.max(1, MOCHI_NAME_HAND_TOTAL_ROWS - nameLen);
+    half.appendChild(buildChar(marker, 'mg-marker', flip));
+    half.appendChild(buildNameBlock(name, fallbackName, flip));
+    half.appendChild(buildHandBlock(hand, flip, handRowsPerCol));
+    return half;
+  }
+
+  function renderMochiVertical(hands, names) {
+    mochiVerticalEl.innerHTML = '';
+    var goteHalf = buildHalf('☖', names && names.w, '後手', hands.w, true, 'mg-gote');
+    var senteHalf = buildHalf('☗', names && names.b, '先手', hands.b, false, 'mg-sente');
+    mochiVerticalEl.appendChild(goteHalf);
+    mochiVerticalEl.appendChild(senteHalf);
+  }
+
+  function updateButtons() {
+    document.getElementById('btn-first').disabled = currentIndex === 0;
+    document.getElementById('btn-prev').disabled = currentIndex === 0;
+    document.getElementById('btn-next').disabled = currentIndex >= game.moves.length;
+    document.getElementById('btn-last').disabled = currentIndex >= game.moves.length;
+    document.getElementById('btn-play').disabled = game.moves.length === 0;
+    document.getElementById('btn-stop').disabled = !playTimer;
+  }
+
+  // ---------------------------------------------------------------------
+  // Custom board mode: a position loaded via OCR, or built from scratch/
+  // the initial position, that the user can hand-correct square by square.
+  // Distinct from kifu playback, which always derives the displayed
+  // position from game.moves + currentIndex.
+  // ---------------------------------------------------------------------
+
+  function enterCustomMode(initialState) {
+    stopPlay();
+    mode = 'custom';
+    customState = initialState || { board: {}, hands: { b: {}, w: {} } };
+    selectedCell = null;
+    for (var key in cellEls) cellEls[key].classList.add('editable');
+    document.getElementById('edit-tools-card').style.display = '';
+    document.getElementById('movelist-card').style.display = 'none';
+    renderCustom();
+  }
+
+  function exitCustomMode() {
+    mode = 'kifu';
+    for (var key in cellEls) cellEls[key].classList.remove('editable');
+    document.getElementById('edit-hand-panel').style.display = 'none';
+    document.getElementById('edit-tools-card').style.display = 'none';
+    document.getElementById('movelist-card').style.display = '';
+    render();
+  }
+
+  function renderCustom() {
+    quotaStatus = computeQuotaStatus(customState.board, customState.hands);
+    paintBoard(customState.board, true);
+    // 盤面修正カード内の名前欄と、棋譜読み込みカード内の名前欄を常に
+    // 同じ値に保つ（どちらで編集してもすぐ反映されるように）。
+    if (editSenteNameInput.value !== senteNameInput.value) editSenteNameInput.value = senteNameInput.value;
+    if (editGoteNameInput.value !== goteNameInput.value) editGoteNameInput.value = goteNameInput.value;
+    var effNames = {
+      b: (senteNameInput.value && senteNameInput.value.trim()) || '先手',
+      w: (goteNameInput.value && goteNameInput.value.trim()) || '後手'
+    };
+    renderMochiVertical(customState.hands, effNames);
+    moveCounterEl.textContent = '盤面編集モード';
+    ['btn-first', 'btn-prev', 'btn-next', 'btn-last', 'btn-play', 'btn-stop'].forEach(function (id) {
+      document.getElementById(id).disabled = true;
+    });
+    renderEditHandPanel();
+    renderEditSupply();
+  }
+
+  function renderEditHandPanel() {
+    var panel = document.getElementById('edit-hand-panel');
+    if (mode !== 'custom') {
+      panel.style.display = 'none';
+      return;
+    }
+    panel.style.display = '';
+    panel.innerHTML = '';
+    ['b', 'w'].forEach(function (owner) {
+      var col = document.createElement('div');
+      col.className = 'edit-hand-col';
+      var h3 = document.createElement('h3');
+      h3.textContent = owner === 'b' ? '先手 持ち駒' : '後手 持ち駒';
+      col.appendChild(h3);
+      HAND_EDIT_TYPES.forEach(function (type) {
+        var row = document.createElement('div');
+        // 駒の総数（盤面+両者の持ち駒）が駒箱の上限を超えている場合は
+        // 背景を赤くして分かりやすくする（先手/後手どちらの持ち駒欄でも
+        // 同じ種類なら同時に赤くなる）。
+        row.className = 'edit-hand-row' + (quotaStatus.over[type] ? ' over-quota' : '');
+        var label = document.createElement('span');
+        label.textContent = E.KANJI[type];
+        var stepper = document.createElement('span');
+        stepper.className = 'stepper';
+        var minusBtn = document.createElement('button');
+        minusBtn.textContent = '－';
+        minusBtn.addEventListener('click', function () {
+          var n = customState.hands[owner][type] || 0;
+          if (n > 0) n--;
+          if (n <= 0) delete customState.hands[owner][type]; else customState.hands[owner][type] = n;
+          renderCustom();
+        });
+        var countSpan = document.createElement('span');
+        countSpan.textContent = String(customState.hands[owner][type] || 0);
+        var plusBtn = document.createElement('button');
+        plusBtn.textContent = '＋';
+        plusBtn.addEventListener('click', function () {
+          customState.hands[owner][type] = (customState.hands[owner][type] || 0) + 1;
+          renderCustom();
+        });
+        stepper.appendChild(minusBtn);
+        stepper.appendChild(countSpan);
+        stepper.appendChild(plusBtn);
+        row.appendChild(label);
+        row.appendChild(stepper);
+        col.appendChild(row);
+      });
+      panel.appendChild(col);
+    });
+  }
+
+  // Order the supply column is drawn in - base types only (promoted forms
+  // are reached by dragging the base piece onto the board, then clicking
+  // it to cycle to its promoted state; see cycleBoardPiece).
+  var SUPPLY_ORDER = ['OU', 'HI', 'KA', 'KI', 'GI', 'KE', 'KY', 'FU'];
+
+  // Draws one draggable chip per not-yet-placed piece (quotaStatus.deficient),
+  // so the total of board + both hands + supply always equals a full set.
+  function renderEditSupply() {
+    var listEl = document.getElementById('edit-supply-list');
+    var emptyEl = document.getElementById('edit-supply-empty');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+    var any = false;
+    SUPPLY_ORDER.forEach(function (type) {
+      var n = quotaStatus.deficient[type] || 0;
+      for (var i = 0; i < n; i++) {
+        any = true;
+        var chip = document.createElement('span');
+        chip.className = 'supply-piece';
+        chip.draggable = true;
+        chip.textContent = E.KANJI[type];
+        chip.title = E.KANJI[type] + 'を盤面にドラッグして配置';
+        (function (t) {
+          chip.addEventListener('dragstart', function (e) {
+            e.dataTransfer.setData('text/plain', 'supply:' + t);
+            e.dataTransfer.effectAllowed = 'move';
+          });
+        })(type);
+        listEl.appendChild(chip);
+      }
+    });
+    emptyEl.style.display = any ? 'none' : '';
+  }
+
+  // Four-column move table: move-number + move for sente, then
+  // move-number + move for gote, one row per move-pair (matches how
+  // printed kifu sheets are laid out, but with a number beside each side).
+  function renderMoveList() {
+    moveTableBodyEl.innerHTML = '';
+    moveCellEls = [];
+    for (var i = 0; i < game.moves.length; i += 2) {
+      var tr = document.createElement('tr');
+
+      var senteNumTd = document.createElement('td');
+      senteNumTd.className = 'num-col';
+      senteNumTd.textContent = (i + 1);
+      tr.appendChild(senteNumTd);
+
+      var senteTd = document.createElement('td');
+      senteTd.className = 'sente-col';
+      (function (idx) {
+        var mv = game.moves[idx];
+        senteTd.textContent = mv.notation;
+        senteTd.addEventListener('click', function () {
+          currentIndex = idx + 1;
+          stopPlay();
+          render();
+        });
+        moveCellEls[idx] = senteTd;
+      })(i);
+      tr.appendChild(senteTd);
+
+      var goteNumTd = document.createElement('td');
+      var goteTd = document.createElement('td');
+      if (i + 1 < game.moves.length) {
+        goteNumTd.className = 'num-col';
+        goteNumTd.textContent = (i + 2);
+        goteTd.className = 'gote-col';
+        (function (idx) {
+          var mv = game.moves[idx];
+          goteTd.textContent = mv.notation;
+          goteTd.addEventListener('click', function () {
+            currentIndex = idx + 1;
+            stopPlay();
+            render();
+          });
+          moveCellEls[idx] = goteTd;
+        })(i + 1);
+      } else {
+        goteNumTd.className = 'num-col empty-cell';
+        goteTd.className = 'gote-col empty-cell';
+        goteTd.textContent = '';
+      }
+      tr.appendChild(goteNumTd);
+      tr.appendChild(goteTd);
+
+      moveTableBodyEl.appendChild(tr);
+    }
+  }
+
+  function renderWarnings() {
+    var msgs = game.warnings.slice();
+    if (game.ended) msgs.push('終局: ' + game.ended);
+    if (msgs.length === 0) {
+      warningsEl.textContent = game.moves.length ? (game.moves.length + ' 手を正しく読み込みました。') : 'まだ棋譜を読み込んでいません。';
+      warningsEl.classList.add('empty');
+    } else {
+      warningsEl.textContent = msgs.join('\n');
+      warningsEl.classList.remove('empty');
+    }
+  }
+
+  function loadKifu(text) {
+    stopPlay();
+    // 盤面カスタマイズ中に棋譜を読み込んだ（またはクリアした）場合は、
+    // 棋譜再生モードに自動的に戻す（専用の「戻る」ボタンは廃止したため）。
+    if (mode === 'custom') exitCustomMode();
+    var result = E.buildGame(text);
+    game.moves = result.moves;
+    game.warnings = result.warnings;
+    game.ended = result.ended;
+    game.names = result.names || {};
+    // auto-fill name inputs from the kifu if the user hasn't typed anything
+    if (!senteNameInput.value && game.names.b) senteNameInput.value = game.names.b;
+    if (!goteNameInput.value && game.names.w) goteNameInput.value = game.names.w;
+    currentIndex = 0;
+    renderMoveList();
+    renderWarnings();
+    render();
+  }
+
+  function stopPlay() {
+    if (playTimer) {
+      clearInterval(playTimer);
+      playTimer = null;
+      updateButtons();
+    }
+  }
+
+  // Play (▶ 再生) and stop (■) are now two separate, always-visible
+  // buttons rather than one toggling button.
+  function startPlay() {
+    if (playTimer) return;
+    if (currentIndex >= game.moves.length) currentIndex = 0;
+    var speed = parseInt(speedSelect.value, 10);
+    playTimer = setInterval(function () {
+      if (currentIndex >= game.moves.length) {
+        stopPlay();
+        return;
+      }
+      currentIndex++;
+      render();
+    }, speed);
+    updateButtons();
+  }
+
+  document.getElementById('btn-load').addEventListener('click', function () {
+    loadKifu(kifuTextEl.value);
+    // 「kifを読み込む」と同様に、こちらを使ったときも自分を赤く、
+    // 相手を白くする（kifのドロップゾーンが開いていれば閉じる）。
+    document.getElementById('kif-dropzone').style.display = 'none';
+    document.getElementById('btn-kif-dropzone-toggle').classList.remove('primary');
+    this.classList.add('primary');
+  });
+  document.getElementById('btn-reset').addEventListener('click', function () {
+    kifuTextEl.value = '';
+    fileStatusEl.textContent = '';
+    senteNameInput.value = '';
+    goteNameInput.value = '';
+    loadKifu('');
+  });
+  document.getElementById('btn-first').addEventListener('click', function () {
+    stopPlay(); currentIndex = 0; render();
+  });
+  document.getElementById('btn-prev').addEventListener('click', function () {
+    stopPlay(); if (currentIndex > 0) currentIndex--; render();
+  });
+  document.getElementById('btn-next').addEventListener('click', function () {
+    stopPlay(); if (currentIndex < game.moves.length) currentIndex++; render();
+  });
+  document.getElementById('btn-last').addEventListener('click', function () {
+    stopPlay(); currentIndex = game.moves.length; render();
+  });
+  document.getElementById('btn-stop').addEventListener('click', stopPlay);
+  document.getElementById('btn-play').addEventListener('click', startPlay);
+  senteNameInput.addEventListener('input', function () { mode === 'custom' ? renderCustom() : render(); });
+  goteNameInput.addEventListener('input', function () { mode === 'custom' ? renderCustom() : render(); });
+  // 盤面修正カード内の名前欄はサイドバーの名前欄と同じ値を共有する
+  // （どちらに入力してもすぐ両方に反映され、盤面にも反映される）。
+  editSenteNameInput.addEventListener('input', function () {
+    senteNameInput.value = editSenteNameInput.value;
+    mode === 'custom' ? renderCustom() : render();
+  });
+  editGoteNameInput.addEventListener('input', function () {
+    goteNameInput.value = editGoteNameInput.value;
+    mode === 'custom' ? renderCustom() : render();
+  });
+
+  // ---------------------------------------------------------------------
+  // ウェブ用出力: 盤面図・指し手一覧を他サイトに埋め込むための自己完結型
+  // HTMLスニペットを生成する。埋め込み側は本アプリ本体やshogi_engine.jsに
+  // 依存しないよう、必要な定数・描画ロジックをすべてスニペット内に複製する。
+  // 指し手の再生は、各手適用後の盤面/持ち駒スナップショットを事前計算して
+  // 埋め込むことで実現する（埋め込み側で棋譜パーサ/指し手適用ロジックを
+  // 再実装する必要がなく、事故が起きにくい）。
+  //
+  // 社内記事CMSなど貼り付け先の本文サニタイズ処理により、<style>タグや
+  // <script>タグ自体が保存時に取り除かれてしまうことがある（進む/再生の
+  // ボタンは表示されるのに盤面だけが全く表示されない、という不具合が
+  // 実際に報告された）。これに備えて、見た目に関わるスタイルはすべて
+  // 各要素のstyle属性に直接埋め込み、盤面・持ち駒・指し手一覧はJSが
+  // 動く前から見える「静的な初期状態」としてHTMLに直接出力する。
+  // <script>が生き残った場合だけ、進む/戻る/再生などの操作が有効になる
+  // （プログレッシブエンハンスメント）。
+  // ---------------------------------------------------------------------
+
+  // 生成時（このアプリ自身のブラウザ上でのDOM組み立て）と、埋め込み先での
+  // 実行時（生成したタグ自身の<script>）の両方から同一のロジックで盤面・
+  // 持ち駒・指し手一覧を組み立てられるよう、共通のソースを1か所だけ用意する
+  // （二重に書くと片方だけ直して見た目がずれる事故が起きやすいため）。
+  // スタイルは常にstyle属性で直接指定する。
+  var WIDGET_CORE_JS = [
+    'var KANJI = {FU:"歩",KY:"香",KE:"桂",GI:"銀",KI:"金",KA:"角",HI:"飛",OU:"玉",TO:"と",NY:"成香",NK:"成桂",NG:"成銀",UM:"馬",RY:"龍"};',
+    'var PROMOTED_TYPES = {TO:1,NY:1,NK:1,NG:1,UM:1,RY:1};',
+    'var STACKED_TYPES = {NY:1,NK:1,NG:1};',
+    'var HAND_ORDER = ["HI","KA","KI","GI","KE","KY","FU"];',
+    'var ZEN = "０１２３４５６７８９";',
+    'var KAN = "一二三四五六七八九";',
+    'var CELL_CSS = "border:1px solid #6b4d24;text-align:center;vertical-align:middle;font-size:22px;user-select:none;box-sizing:border-box;width:38px;height:38px;background:#dcb35c;padding:0;";',
+    'var LABEL_CSS = "text-align:center;vertical-align:middle;font-size:14px;color:#5a4a34;box-sizing:border-box;padding:0;border:none;background:#dcb35c;";',
+    'var KOMA_W = 30, KOMA_H = 34;',
+    'var KOMA_SHAPE_CSS = "box-sizing:border-box;background:#f3ddaa;border:1px solid #8a5a2b;clip-path:polygon(30% 0%,70% 0%,100% 20%,100% 100%,0% 100%,0% 20%);align-items:center;justify-content:center;";',
+    'function kanjiNum(n){ if (n<=0) return ""; if (n<=9) return KAN[n-1]; if (n<20) return n===10 ? "十" : ("十" + KAN[n-11]); return String(n); }',
+    'function fillKomaContent(shape, type, emphasis, promoted){',
+    '  var color = promoted ? "#a33b2e" : "#1a1208";',
+    '  var textCss = "font-weight:900;line-height:1;color:" + color + ";-webkit-text-stroke:0.4px " + color + ";" + (emphasis ? "font-family:\'Hiragino Sans\',\'Yu Gothic\',\'Meiryo\',sans-serif;" : "font-family:\'Yu Mincho\',\'Hiragino Mincho ProN\',serif;");',
+    '  var label = KANJI[type];',
+    '  if (STACKED_TYPES[type]) {',
+    '    var col = document.createElement("div");',
+    '    col.setAttribute("style", "display:flex;flex-direction:column;align-items:center;line-height:.95;");',
+    '    var stackedFontSize = emphasis ? "15px" : "12px";',
+    '    label.split("").forEach(function(ch){ var line = document.createElement("span"); line.textContent = ch; line.setAttribute("style", textCss + "font-size:" + stackedFontSize + ";transform:scaleX(1.3);"); col.appendChild(line); });',
+    '    shape.appendChild(col);',
+    '  } else {',
+    '    var span = document.createElement("span");',
+    '    span.setAttribute("style", textCss + "font-size:" + (emphasis ? "22px" : "19px") + ";");',
+    '    span.textContent = label;',
+    '    shape.appendChild(span);',
+    '  }',
+    '}',
+    'function buildBoardSkeleton(boardAreaEl){',
+    '  boardAreaEl.innerHTML = "";',
+    '  boardAreaEl.setAttribute("style", "display:inline-block;background:#dcb35c;padding:0 0 6px 6px;");',
+    '  var table = document.createElement("table");',
+    '  table.setAttribute("style", "border-collapse:collapse;background:#dcb35c;");',
+    '  table.setAttribute("cellpadding", "0");',
+    '  table.setAttribute("cellspacing", "0");',
+    '  var cellEls = {};',
+    '  var headRow = document.createElement("tr");',
+    '  for (var f = 9; f >= 1; f--) { var th = document.createElement("td"); th.textContent = ZEN[f]; th.setAttribute("style", LABEL_CSS + "width:38px;height:26px;"); headRow.appendChild(th); }',
+    '  var cornerTd = document.createElement("td"); cornerTd.setAttribute("style", LABEL_CSS + "width:16px;height:26px;"); headRow.appendChild(cornerTd);',
+    '  table.appendChild(headRow);',
+    '  for (var rank = 1; rank <= 9; rank++) {',
+    '    var tr = document.createElement("tr");',
+    '    for (var file = 9; file >= 1; file--) {',
+    '      var cell = document.createElement("td");',
+    '      cell.className = "kse-cell";',
+    '      cell.setAttribute("style", CELL_CSS);',
+    '      tr.appendChild(cell);',
+    '      cellEls[file + "," + rank] = cell;',
+    '    }',
+    '    var rankTd = document.createElement("td"); rankTd.textContent = KAN[rank - 1]; rankTd.setAttribute("style", LABEL_CSS + "width:16px;height:38px;"); tr.appendChild(rankTd);',
+    '    table.appendChild(tr);',
+    '  }',
+    '  boardAreaEl.appendChild(table);',
+    '  return cellEls;',
+    '}',
+    'function paintBoardInto(cellEls, boardMap){',
+    '  for (var key in cellEls) { cellEls[key].innerHTML = ""; cellEls[key].setAttribute("style", CELL_CSS); }',
+    '  for (var k2 in boardMap) {',
+    '    var p = boardMap[k2]; var cell = cellEls[k2]; if (!cell) continue;',
+    '    var shape = document.createElement("div");',
+    '    var shapeCss = "position:relative;display:flex;width:" + KOMA_W + "px;height:" + KOMA_H + "px;margin:0 auto;" + KOMA_SHAPE_CSS;',
+    '    if (p.owner === "w") shapeCss += "transform:rotate(180deg);";',
+    '    shape.setAttribute("style", shapeCss);',
+    '    fillKomaContent(shape, p.type, p.emphasis, !!PROMOTED_TYPES[p.type]);',
+    '    cell.appendChild(shape);',
+    '  }',
+    '}',
+    'function highlightCell(cellEls, key){ if (cellEls[key]) cellEls[key].style.background = "#ff9800"; }',
+    'function renderMochiRowInto(container, hand, name, fallback, flip){',
+    '  container.innerHTML = "";',
+    '  container.setAttribute("style", "text-align:center;box-sizing:border-box;padding:" + (flip ? "0 0 6px 0" : "6px 0 0 0") + ";");',
+    '  var inner = document.createElement("div");',
+    '  var css = "display:inline-flex;align-items:center;font-weight:bold;font-size:16px;white-space:nowrap;";',
+    '  if (flip) css += "transform:rotate(180deg);";',
+    '  inner.setAttribute("style", css);',
+    '  var nameSpan = document.createElement("span");',
+    '  nameSpan.textContent = name || fallback;',
+    '  nameSpan.style.marginRight = "6px";',
+    '  inner.appendChild(nameSpan);',
+    '  var mw = KOMA_W - 6, mh = KOMA_H - 6;',
+    '  HAND_ORDER.forEach(function(type){',
+    '    var n = hand[type] || 0;',
+    '    for (var i = 0; i < n; i++) {',
+    '      var shape = document.createElement("div");',
+    '      shape.setAttribute("style", "display:inline-flex;vertical-align:middle;width:" + mw + "px;height:" + mh + "px;margin:0 2px;" + KOMA_SHAPE_CSS);',
+    '      fillKomaContent(shape, type, false, false);',
+    '      inner.appendChild(shape);',
+    '    }',
+    '  });',
+    '  container.appendChild(inner);',
+    '}',
+    'function buildMoveRowsInto(tbody, notations, currentIdx, onClick){',
+    '  tbody.innerHTML = "";',
+    '  var numCss = "padding:2px 6px;border-bottom:1px solid #efe8d8;color:#a89b86;text-align:right;cursor:default;width:28px;";',
+    '  var cellEls = [];',
+    '  for (var i = 0; i < notations.length; i++) {',
+    '    var tr = document.createElement("tr");',
+    '    var numTd = document.createElement("td"); numTd.textContent = (i + 1); numTd.setAttribute("style", numCss); tr.appendChild(numTd);',
+    '    var td = document.createElement("td");',
+    '    td.setAttribute("style", "padding:2px 6px;cursor:pointer;border-bottom:1px solid #efe8d8;" + (i === currentIdx ? "background:#fff3a0;font-weight:bold;" : ""));',
+    '    td.textContent = notations[i];',
+    '    (function(idx, cell){ if (onClick) cell.addEventListener("click", function(){ onClick(idx); }); cellEls[idx] = cell; })(i, td);',
+    '    tr.appendChild(td);',
+    '    tbody.appendChild(tr);',
+    '  }',
+    '  return cellEls;',
+    '}'
+  ];
+
+  // ---------------------------------------------------------------------
+  // 「iframeで埋め込む」の共通ビューア方式: 盤面を表示するHTMLページは
+  // GitHub Pagesに1回だけ置いておき、対局ごとのデータはURLの#以降
+  // （ハッシュフラグメント）に載せて渡す。ハッシュはサーバーに送信され
+  // ないので、静的ホスティングであるGitHub Pages側は何も対応不要で、
+  // ビューア側のJSがlocation.hashを読むだけで済む。
+  //
+  // ペイロードは「初期局面＋指し手の差分（from/to/駒種/打/成/取った駒）」
+  // だけを持ち、全手数ぶんの盤面を丸ごと持たない（buildSnapshotsForEmbed
+  // が使う方式より大幅に小さい）。表示に必要な各手ごとの盤面・棋譜表記は、
+  // ビューア側でこのVIEWER_EXTRA_JSのexpandPayload()が指し手を1手ずつ
+  // 適用しながら組み立て直す。
+  // ---------------------------------------------------------------------
+  var VIEWER_EXTRA_JS = [
+    'var DEMOTE = {TO:"FU",NY:"KY",NK:"KE",NG:"GI",UM:"KA",RY:"HI"};',
+    'function baseTypeOf(t){ return DEMOTE[t] || t; }',
+    'function cloneMap(m){ var o = {}; for (var k in m) o[k] = m[k]; return o; }',
+    'function cloneHands(h){ return { b: cloneMap(h.b), w: cloneMap(h.w) }; }',
+    // メインアプリのnotationFor()と同じロジックで、圧縮した指し手データから
+    // 表示用の棋譜表記（▲７六歩、など）を組み立てる。
+    'function notationForCompact(mv, prevTo){',
+    '  var mark = mv.color === "b" ? "▲" : "△";',
+    '  var same = prevTo && prevTo.file === mv.to.file && prevTo.rank === mv.to.rank;',
+    '  var s = same',
+    '    ? (mark + "同" + KANJI[mv.baseType])',
+    '    : (mark + (ZEN[mv.to.file] || mv.to.file) + (KAN[mv.to.rank - 1] || mv.to.rank) + KANJI[mv.baseType]);',
+    '  if (mv.drop) s += "打";',
+    '  if (mv.promoted) s += "成";',
+    '  return s;',
+    '}',
+    // メインアプリのapplyRecordToState()と同じロジックで、1手ぶんの差分を
+    // 盤面/持ち駒に適用する。
+    'function applyRecordToState(state, mv){',
+    '  if (mv.drop) {',
+    '    state.hands[mv.color][mv.baseType] -= 1;',
+    '    if (state.hands[mv.color][mv.baseType] <= 0) delete state.hands[mv.color][mv.baseType];',
+    '  } else if (mv.from) {',
+    '    delete state.board[mv.from.file + "," + mv.from.rank];',
+    '  }',
+    '  if (mv.captured) {',
+    '    var bt = baseTypeOf(mv.captured.type);',
+    '    state.hands[mv.color][bt] = (state.hands[mv.color][bt] || 0) + 1;',
+    '  }',
+    '  state.board[mv.to.file + "," + mv.to.rank] = { type: mv.type, owner: mv.color };',
+    '}',
+    // 圧縮ペイロード（初期局面＋指し手の差分だけ）から、再生に必要な全手数
+    // ぶんのスナップショット・棋譜表記・着手マスの配列を復元する。
+    'function expandPayload(payload){',
+    '  var state = { board: cloneMap(payload.initial.board), hands: cloneHands(payload.initial.hands) };',
+    '  var snapshots = [{ board: cloneMap(state.board), hands: cloneHands(state.hands) }];',
+    '  var notations = []; var tos = []; var prevTo = null;',
+    '  (payload.moves || []).forEach(function(mv){',
+    '    applyRecordToState(state, mv);',
+    '    notations.push(notationForCompact(mv, prevTo));',
+    '    tos.push(mv.to);',
+    '    prevTo = mv.to;',
+    '    snapshots.push({ board: cloneMap(state.board), hands: cloneHands(state.hands) });',
+    '  });',
+    '  return { snapshots: snapshots, notations: notations, tos: tos, names: payload.names, hasMoves: (payload.moves || []).length > 0 };',
+    '}',
+    // ハッシュフラグメント "#d=<encodeURIComponentされたJSON>" を読み取る。
+    'function decodeHashPayload(){',
+    '  var m = (location.hash || "").match(/^#d=(.+)$/);',
+    '  if (!m) return null;',
+    '  try { return JSON.parse(decodeURIComponent(m[1])); } catch (e) { return null; }',
+    '}'
+  ].join('\n');
+
+  // 現在の棋譜（またはカスタム盤面）から、URLに載せる圧縮ペイロードを
+  // 作る。全手数ぶんの盤面ではなく、指し手の差分だけを持つ。
+  function buildCompactPayload() {
+    var hasMoves = game.moves.length > 0;
+    var hasCustom = mode === 'custom' && customState;
+    if (!hasMoves && !hasCustom) return null;
+    if (hasMoves) {
+      var initState = E.initialState();
+      return {
+        initial: { board: initState.board, hands: initState.hands },
+        moves: game.moves.map(function (mv) {
+          return {
+            color: mv.color, type: mv.type, baseType: mv.baseType,
+            from: mv.from, to: mv.to, drop: mv.drop, promoted: mv.promoted,
+            captured: mv.captured
+          };
+        }),
+        names: {
+          b: (senteNameInput.value && senteNameInput.value.trim()) || game.names.b || '先手',
+          w: (goteNameInput.value && goteNameInput.value.trim()) || game.names.w || '後手'
+        }
+      };
+    }
+    return {
+      initial: { board: customState.board, hands: customState.hands },
+      moves: [],
+      names: {
+        b: (senteNameInput.value && senteNameInput.value.trim()) || '先手',
+        w: (goteNameInput.value && goteNameInput.value.trim()) || '後手'
+      }
+    };
+  }
+
+  // 1回だけGitHub Pages等にアップロードしておく、共通の「ビューアページ」
+  // のHTML全体を組み立てる。棋譜データは一切含まず、ページ読み込み時に
+  // location.hashから読み取って表示する（buildCompactPayload/
+  // encodePayloadForUrlで作ったURLと対になる）。
+  function buildViewerPageHtml() {
+    var coreSrc = WIDGET_CORE_JS.join('\n') + '\n' + VIEWER_EXTRA_JS;
+    var btnCss = 'background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;';
+    var thCss = 'background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;';
+
+    var bodyHtml = [
+      '<div id="app" style="font-family:\'Hiragino Sans\',\'Yu Gothic\',sans-serif;color:#2b2118;padding:16px;">',
+      '<div id="controls" style="margin-bottom:10px;font-size:13px;text-align:center;display:none;">',
+      '<button data-a="first" title="最初へ" style="' + btnCss + '">|&lt;</button> ',
+      '<button data-a="prev" title="1手戻る" style="' + btnCss + '">&lt;</button> ',
+      '<button data-a="stop" title="停止" style="' + btnCss + '">■</button> ',
+      '<button data-a="next" title="1手進む" style="' + btnCss + '">&gt;</button> ',
+      '<button data-a="last" title="最後へ" style="' + btnCss + '">&gt;|</button> ',
+      '<br data-r="mobileBreak" style="display:none;">',
+      '<span data-r="counter" style="font-size:13px;min-width:80px;text-align:center;"></span> ',
+      '<button data-a="play" title="自動再生" style="background:#a33b2e;color:#fff;border:1px solid #a33b2e;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">▶ 再生</button> ',
+      '<select data-r="speed" style="font-size:12px;">',
+      '<option value="1500">遅い</option><option value="800" selected>ふつう</option><option value="350">速い</option>',
+      '</select>',
+      '</div>',
+      '<div id="empty-msg" style="font-size:13px;color:#8a4a1c;">表示する棋譜データがありません。URLが正しいかご確認ください。</div>',
+      '<div style="max-width:100%;overflow-x:auto;">',
+      '<table id="layout-table" style="border-collapse:collapse;margin:0 auto;display:none;"><tr data-kse-row="1">',
+      '<td data-r="boardCol" valign="top" style="vertical-align:top;padding:0;text-align:center;">',
+      '<div data-r="mochiGote"></div>',
+      '<div data-r="boardArea"></div>',
+      '<div data-r="mochiSente"></div>',
+      '</td>',
+      '<td data-r="movelistWrap" valign="top" style="vertical-align:top;padding:0 0 0 8px;width:150px;display:none;">',
+      '<div style="height:368px;overflow-y:auto;border:1px solid #d8cdb8;border-radius:4px;">',
+      '<table style="width:100%;border-collapse:collapse;font-size:12px;">',
+      '<thead><tr>',
+      '<th style="' + thCss + 'width:28px;"></th>',
+      '<th style="' + thCss + '">指し手</th>',
+      '</tr></thead>',
+      '<tbody data-r="moveBody"></tbody>',
+      '</table>',
+      '</div>',
+      '</td>',
+      '</tr></table>',
+      '</div>',
+      '</div>'
+    ].join('\n');
+
+    var runtime = [
+      '(function(){',
+      coreSrc,
+      'function q(sel){ return document.querySelector(sel); }',
+      'function rEl(name){ return q(\'[data-r="\' + name + \'"]\'); }',
+      'function aEl(name){ return q(\'[data-a="\' + name + \'"]\'); }',
+      'var boardAreaEl = rEl("boardArea");',
+      'var mochiGoteEl = rEl("mochiGote");',
+      'var mochiSenteEl = rEl("mochiSente");',
+      'var counterEl = rEl("counter");',
+      'var moveBodyEl = rEl("moveBody");',
+      'var speedSelect = rEl("speed");',
+      'var cellEls = null;',
+      'var DATA = null;',
+      'var currentIndex = 0;',
+      'var playTimer = null;',
+      'function render(){',
+      '  var snap = DATA.snapshots[currentIndex];',
+      '  paintBoardInto(cellEls, snap.board);',
+      '  if (currentIndex > 0 && DATA.tos && DATA.tos[currentIndex - 1]) { var lastTo = DATA.tos[currentIndex - 1]; highlightCell(cellEls, lastTo.file + "," + lastTo.rank); }',
+      '  renderMochiRowInto(mochiGoteEl, snap.hands.w, DATA.names && DATA.names.w, "後手", true);',
+      '  renderMochiRowInto(mochiSenteEl, snap.hands.b, DATA.names && DATA.names.b, "先手", false);',
+      '  buildMoveRowsInto(moveBodyEl, DATA.notations, currentIndex - 1, function(idx){ stopPlay(); currentIndex = idx + 1; render(); });',
+      '  counterEl.textContent = currentIndex + " / " + (DATA.snapshots.length - 1) + " 手";',
+      '  updateButtons();',
+      '}',
+      'function updateButtons(){',
+      '  var last = DATA.snapshots.length - 1;',
+      '  aEl("first").disabled = currentIndex === 0;',
+      '  aEl("prev").disabled = currentIndex === 0;',
+      '  aEl("next").disabled = currentIndex >= last;',
+      '  aEl("last").disabled = currentIndex >= last;',
+      '  aEl("play").disabled = last <= 0;',
+      '  aEl("stop").disabled = !playTimer;',
+      '}',
+      'function stopPlay(){ if (playTimer) { clearInterval(playTimer); playTimer = null; updateButtons(); } }',
+      'function startPlay(){',
+      '  if (playTimer) return;',
+      '  var last = DATA.snapshots.length - 1;',
+      '  if (currentIndex >= last) currentIndex = 0;',
+      '  var speed = parseInt(speedSelect.value, 10);',
+      '  playTimer = setInterval(function(){',
+      '    var last2 = DATA.snapshots.length - 1;',
+      '    if (currentIndex >= last2) { stopPlay(); return; }',
+      '    currentIndex++; render();',
+      '  }, speed);',
+      '  updateButtons();',
+      '}',
+      'aEl("first").addEventListener("click", function(){ stopPlay(); currentIndex = 0; render(); });',
+      'aEl("prev").addEventListener("click", function(){ stopPlay(); if (currentIndex > 0) currentIndex--; render(); });',
+      'aEl("next").addEventListener("click", function(){ stopPlay(); var last = DATA.snapshots.length - 1; if (currentIndex < last) currentIndex++; render(); });',
+      'aEl("last").addEventListener("click", function(){ stopPlay(); currentIndex = DATA.snapshots.length - 1; render(); });',
+      'aEl("stop").addEventListener("click", stopPlay);',
+      'aEl("play").addEventListener("click", startPlay);',
+      'function boot(){',
+      '  stopPlay();',
+      '  var payload = decodeHashPayload();',
+      '  var emptyMsg = document.getElementById("empty-msg");',
+      '  var layoutTable = document.getElementById("layout-table");',
+      '  var controls = document.getElementById("controls");',
+      '  if (!payload) { emptyMsg.style.display = ""; layoutTable.style.display = "none"; controls.style.display = "none"; return; }',
+      '  emptyMsg.style.display = "none";',
+      '  layoutTable.style.display = "";',
+      '  DATA = expandPayload(payload);',
+      '  cellEls = buildBoardSkeleton(boardAreaEl);',
+      '  currentIndex = DATA.snapshots.length - 1;',
+      '  controls.style.display = DATA.hasMoves ? "" : "none";',
+      '  rEl("movelistWrap").style.display = DATA.hasMoves ? "" : "none";',
+      '  render();',
+      '}',
+      'window.addEventListener("hashchange", boot);',
+      'boot();',
+      '})();'
+    ].join('\n');
+
+    return [
+      '<!DOCTYPE html>',
+      '<html lang="ja">',
+      '<head>',
+      '<meta charset="UTF-8">',
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+      '<title>棋譜ビューア</title>',
+      '<style>',
+      '@media (max-width:600px){',
+      '  #layout-table[id] { display:block; width:100%; }',
+      '  [data-kse-row] { display:block; width:100%; }',
+      '  [data-r="boardCol"] { display:block; width:100%; text-align:center; }',
+      '  [data-r="movelistWrap"] { display:block !important; width:100% !important; box-sizing:border-box; padding:10px 0 0 0 !important; }',
+      '  [data-r="movelistWrap"] > div { height:220px !important; }',
+      '  #controls [data-r="mobileBreak"] { display:inline !important; }',
+      '  #controls button, #controls select { font-size:16px !important; padding:9px 14px !important; }',
+      '  #controls span[data-r="counter"] { font-size:15px !important; }',
+      '}',
+      '</style>',
+      '</head>',
+      '<body style="margin:0;padding:0;background:#fff;">',
+      bodyHtml,
+      '<script>',
+      runtime,
+      '<\/script>',
+      '</body>',
+      '</html>'
+    ].join('\n');
+  }
+
+  function buildSnapshotsForEmbed() {
+    var snaps = [];
+    for (var i = 0; i <= game.moves.length; i++) {
+      var st = computeStateAt(i);
+      snaps.push({ board: st.board, hands: st.hands });
+    }
+    return snaps;
+  }
+
+  function generateEmbedHtml() {
+    var hasMoves = game.moves.length > 0;
+    var hasCustom = mode === 'custom' && customState;
+    if (!hasMoves && !hasCustom) {
+      alert('埋め込みタグを作成するには、先に棋譜を読み込むか、盤面カスタマイズで盤面を作成してください。');
+      return null;
+    }
+    var uid = 'kse' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    var data;
+    if (hasMoves) {
+      data = {
+        snapshots: buildSnapshotsForEmbed(),
+        notations: game.moves.map(function (mv) { return mv.notation; }),
+        tos: game.moves.map(function (mv) { return mv.to; }),
+        names: {
+          b: (senteNameInput.value && senteNameInput.value.trim()) || game.names.b || '先手',
+          w: (goteNameInput.value && goteNameInput.value.trim()) || game.names.w || '後手'
+        },
+        hasMoves: true
+      };
+    } else {
+      data = {
+        snapshots: [{ board: customState.board, hands: customState.hands }],
+        notations: [],
+        tos: [],
+        names: {
+          b: (senteNameInput.value && senteNameInput.value.trim()) || '先手',
+          w: (goteNameInput.value && goteNameInput.value.trim()) || '後手'
+        },
+        hasMoves: false
+      };
+    }
+    // 棋譜モードでは、開いた直後に最終局面（決着図）が見えるようにする。
+    // これは「JSが動かない場合の静的表示」としても一番情報量が多く、
+    // JSが動く場合も｜<（最初へ）で冒頭まで戻れるので実用上困らない。
+    var defaultIndex = hasMoves ? (data.snapshots.length - 1) : 0;
+    return buildEmbedString(uid, data, defaultIndex);
+  }
+
+  // Assembles the full standalone <div>+<script> snippet. All visible
+  // styling is inline (style="...") rather than in a <style> block, and
+  // the board/mochigoma/move-list are pre-rendered as real static HTML
+  // (via WIDGET_CORE_JS run once against a detached, off-document DOM
+  // subtree) so the diagram is visible even if the host page's sanitizer
+  // strips the trailing <script>. class names and data-r/data-a
+  // attributes are kept too, purely as hooks for that <script> (when it
+  // does survive) to find elements and add interactivity - never as the
+  // only source of visual styling.
+  function buildEmbedString(uid, data, defaultIndex) {
+    // Escaping every "<" in the JSON payload (e.g. as part of a move
+    // notation) neutralizes any script-closing-tag-like sequence it might
+    // otherwise contain, without changing the parsed value at runtime.
+    var jsonStr = JSON.stringify(data).replace(/</g, '\\u003c');
+    var coreSrc = WIDGET_CORE_JS.join('\n');
+
+    var core = (new Function(coreSrc +
+      '\nreturn { buildBoardSkeleton: buildBoardSkeleton, paintBoardInto: paintBoardInto, highlightCell: highlightCell, renderMochiRowInto: renderMochiRowInto, buildMoveRowsInto: buildMoveRowsInto };'
+    ))();
+
+    // Build the initial static markup using a detached (never-inserted)
+    // DOM subtree in this app's own document, then read back .innerHTML.
+    var tmpBoardArea = document.createElement('div');
+    var tmpCellEls = core.buildBoardSkeleton(tmpBoardArea);
+    var snap = data.snapshots[defaultIndex];
+    core.paintBoardInto(tmpCellEls, snap.board);
+    if (defaultIndex > 0 && data.tos && data.tos[defaultIndex - 1]) {
+      var lastTo = data.tos[defaultIndex - 1];
+      core.highlightCell(tmpCellEls, lastTo.file + ',' + lastTo.rank);
+    }
+    var tmpMochiGote = document.createElement('div');
+    core.renderMochiRowInto(tmpMochiGote, snap.hands.w, data.names && data.names.w, '後手', true);
+    var tmpMochiSente = document.createElement('div');
+    core.renderMochiRowInto(tmpMochiSente, snap.hands.b, data.names && data.names.b, '先手', false);
+    var tmpTbody = document.createElement('tbody');
+    core.buildMoveRowsInto(tmpTbody, data.notations, defaultIndex - 1, null);
+
+    var boardAreaHtml = tmpBoardArea.innerHTML;
+    var mochiGoteHtml = tmpMochiGote.innerHTML;
+    var mochiSenteHtml = tmpMochiSente.innerHTML;
+    var moveRowsHtml = tmpTbody.innerHTML;
+    var counterText = data.hasMoves ? (defaultIndex + ' / ' + (data.snapshots.length - 1) + ' 手') : '';
+    var btnCss = 'background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;';
+    var thCss = 'background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;';
+
+    // The outer mochi / board / move-list arrangement is a single <table>
+    // (one row, up to 3 cells) rather than a flex row, for the same
+    // sanitizer-robustness reason as the board itself: table columns sit
+    // side by side purely from HTML structure, with no CSS "display"
+    // property required.
+    // Mobile fallback: the outer layout is a table (see comment above), so
+    // narrow screens can't reflow it on their own and the move-list column
+    // used to stick out past the right edge of the page/iframe. This
+    // <style> block (scoped to this widget's own id) switches the outer
+    // table's row to block layout below a breakpoint, stacking the
+    // move-list under the board instead of beside it; if the sanitizer
+    // strips the whole <style> tag the fixed side-by-side layout still
+    // renders, just without the mobile reflow.
+    var responsiveCss = [
+      '<style>',
+      '@media (max-width:600px){',
+      '  #' + uid + ' [data-kse-row] { display:block; width:100%; }',
+      '  #' + uid + ' [data-r="boardCol"] { display:block; width:100%; text-align:center; }',
+      '  #' + uid + ' [data-r="movelistWrap"] { display:block !important; width:100% !important; box-sizing:border-box; padding:10px 0 0 0 !important; }',
+      '  #' + uid + ' [data-r="movelistWrap"] > div { height:220px !important; }',
+      '  #' + uid + ' [data-r="mobileBreak"] { display:inline !important; }',
+      '  #' + uid + ' [data-r="controls"] button, #' + uid + ' [data-r="controls"] select { font-size:16px !important; padding:9px 14px !important; }',
+      '  #' + uid + ' [data-r="controls"] span[data-r="counter"] { font-size:15px !important; }',
+      '}',
+      '</style>'
+    ].join('\n');
+
+    var html = [
+      '<div id="' + uid + '" style="font-family:\'Hiragino Sans\',\'Yu Gothic\',sans-serif;color:#2b2118;">',
+      responsiveCss,
+      (data.hasMoves ? (
+        '<div data-r="controls" style="margin-bottom:10px;font-size:13px;text-align:center;">' +
+        '<button data-a="first" title="最初へ" style="' + btnCss + '">|&lt;</button> ' +
+        '<button data-a="prev" title="1手戻る" style="' + btnCss + '">&lt;</button> ' +
+        '<button data-a="stop" title="停止" style="' + btnCss + '">■</button> ' +
+        '<button data-a="next" title="1手進む" style="' + btnCss + '">&gt;</button> ' +
+        '<button data-a="last" title="最後へ" style="' + btnCss + '">&gt;|</button> ' +
+        '<br data-r="mobileBreak" style="display:none;">' +
+        '<span data-r="counter" style="font-size:13px;min-width:80px;text-align:center;">' + counterText + '</span> ' +
+        '<button data-a="play" title="自動再生" style="background:#a33b2e;color:#fff;border:1px solid #a33b2e;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">▶ 再生</button> ' +
+        '<select data-r="speed" style="font-size:12px;">' +
+        '<option value="1500">遅い</option><option value="800" selected>ふつう</option><option value="350">速い</option>' +
+        '</select>' +
+        '</div>'
+      ) : ''),
+      '<div style="max-width:100%;overflow-x:auto;">',
+      '<table style="border-collapse:collapse;margin:0 auto;"><tr data-kse-row="1">',
+      '<td data-r="boardCol" valign="top" style="vertical-align:top;padding:0;text-align:center;">' +
+      '<div data-r="mochiGote">' + mochiGoteHtml + '</div>' +
+      '<div data-r="boardArea">' + boardAreaHtml + '</div>' +
+      '<div data-r="mochiSente">' + mochiSenteHtml + '</div>' +
+      '</td>',
+      (data.hasMoves ? (
+        '<td data-r="movelistWrap" valign="top" style="vertical-align:top;padding:0 0 0 8px;width:150px;">' +
+        '<div style="height:368px;overflow-y:auto;border:1px solid #d8cdb8;border-radius:4px;">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+        '<thead><tr>' +
+        '<th style="' + thCss + 'width:28px;"></th>' +
+        '<th style="' + thCss + '">指し手</th>' +
+        '</tr></thead>' +
+        '<tbody data-r="moveBody">' + moveRowsHtml + '</tbody>' +
+        '</table>' +
+        '</div>' +
+        '</td>'
+      ) : ''),
+      '</tr></table>',
+      '</div>',
+      '</div>',
+      buildEmbedScriptTags(uid, jsonStr, coreSrc, defaultIndex)
+    ].join('\n');
+
+    return html;
+  }
+
+  // 以前、埋め込み先のCMSが<script>を無効化する場合に備えて、同じ初期化
+  // コードを<img onerror="...">にも複製する対策を入れたが、これは
+  // runtimeSrc（WIDGET_CORE_JS全体＋盤面・指し手データのJSON）をそのまま
+  // 属性値としてもう一度丸ごと複製するため、埋め込みタグのサイズが単純に
+  // 倍増する。長い棋譜では属性値が非常に長くなり、CMS側の本文保存処理が
+  // 長い属性値を切り詰めたり構造を壊したりする実害の方が大きく、かつ
+  // on*系のイベントハンドラ属性は<script>タグ以上に多くのサニタイザーで
+  // 明示的に除去対象になっているため、実際には動かない可能性が高かった。
+  // 実際にサイトへの埋め込みで表示が崩れる不具合が報告されたため、この
+  // 対策は撤回し、単純な<script>タグのみに戻す。
+  function buildEmbedScriptTags(uid, jsonStr, coreSrc, defaultIndex) {
+    var runtimeSrc = [
+      '(function(){',
+      'var ROOT = document.getElementById(' + JSON.stringify(uid) + ');',
+      'if (!ROOT || ROOT.getAttribute("data-kse-inited")) return;',
+      'ROOT.setAttribute("data-kse-inited", "1");',
+      'var DATA = ' + jsonStr + ';',
+      coreSrc,
+      'function q(sel){ return ROOT.querySelector(sel); }',
+      'function rEl(name){ return q(\'[data-r="\' + name + \'"]\'); }',
+      'function aEl(name){ return q(\'[data-a="\' + name + \'"]\'); }',
+      'if (!DATA.hasMoves) return;',
+      'var boardAreaEl = rEl("boardArea");',
+      'var mochiGoteEl = rEl("mochiGote");',
+      'var mochiSenteEl = rEl("mochiSente");',
+      'var counterEl = rEl("counter");',
+      'var moveBodyEl = rEl("moveBody");',
+      'var speedSelect = rEl("speed");',
+      'var cellEls = buildBoardSkeleton(boardAreaEl);',
+      'var currentIndex = ' + defaultIndex + ';',
+      'var playTimer = null;',
+      'function render(){',
+      '  var snap = DATA.snapshots[currentIndex];',
+      '  paintBoardInto(cellEls, snap.board);',
+      '  if (currentIndex > 0 && DATA.tos && DATA.tos[currentIndex - 1]) { var lastTo = DATA.tos[currentIndex - 1]; highlightCell(cellEls, lastTo.file + "," + lastTo.rank); }',
+      '  renderMochiRowInto(mochiGoteEl, snap.hands.w, DATA.names && DATA.names.w, "後手", true);',
+      '  renderMochiRowInto(mochiSenteEl, snap.hands.b, DATA.names && DATA.names.b, "先手", false);',
+      '  buildMoveRowsInto(moveBodyEl, DATA.notations, currentIndex - 1, function(idx){ stopPlay(); currentIndex = idx + 1; render(); });',
+      '  counterEl.textContent = currentIndex + " / " + (DATA.snapshots.length - 1) + " 手";',
+      '  updateButtons();',
+      '}',
+      'function updateButtons(){',
+      '  var last = DATA.snapshots.length - 1;',
+      '  aEl("first").disabled = currentIndex === 0;',
+      '  aEl("prev").disabled = currentIndex === 0;',
+      '  aEl("next").disabled = currentIndex >= last;',
+      '  aEl("last").disabled = currentIndex >= last;',
+      '  aEl("play").disabled = last <= 0;',
+      '  aEl("stop").disabled = !playTimer;',
+      '}',
+      'function stopPlay(){ if (playTimer) { clearInterval(playTimer); playTimer = null; updateButtons(); } }',
+      'function startPlay(){',
+      '  if (playTimer) return;',
+      '  var last = DATA.snapshots.length - 1;',
+      '  if (currentIndex >= last) currentIndex = 0;',
+      '  var speed = parseInt(speedSelect.value, 10);',
+      '  playTimer = setInterval(function(){',
+      '    var last2 = DATA.snapshots.length - 1;',
+      '    if (currentIndex >= last2) { stopPlay(); return; }',
+      '    currentIndex++; render();',
+      '  }, speed);',
+      '  updateButtons();',
+      '}',
+      'aEl("first").addEventListener("click", function(){ stopPlay(); currentIndex = 0; render(); });',
+      'aEl("prev").addEventListener("click", function(){ stopPlay(); if (currentIndex > 0) currentIndex--; render(); });',
+      'aEl("next").addEventListener("click", function(){ stopPlay(); var last = DATA.snapshots.length - 1; if (currentIndex < last) currentIndex++; render(); });',
+      'aEl("last").addEventListener("click", function(){ stopPlay(); currentIndex = DATA.snapshots.length - 1; render(); });',
+      'aEl("stop").addEventListener("click", stopPlay);',
+      'aEl("play").addEventListener("click", startPlay);',
+      'render();',
+      '})();'
+    ].join('\n');
+    return '<script>' + runtimeSrc + '<\/script>';
+  }
+
+  document.getElementById('btn-embed-tag').addEventListener('click', function () {
+    var htmlStr = generateEmbedHtml();
+    if (htmlStr === null) return;
+    document.getElementById('embed-output').value = htmlStr;
+    document.getElementById('embed-copy-status').textContent = '';
+    document.getElementById('embed-modal-overlay').style.display = 'flex';
+  });
+  document.getElementById('btn-embed-close').addEventListener('click', function () {
+    document.getElementById('embed-modal-overlay').style.display = 'none';
+  });
+  document.getElementById('btn-embed-copy').addEventListener('click', function () {
+    var ta = document.getElementById('embed-output');
+    var statusEl = document.getElementById('embed-copy-status');
+    function showCopied() { statusEl.textContent = 'コピーしました。'; }
+    function showFailed() { statusEl.textContent = 'コピーに失敗しました。テキストを手動で選択してコピーしてください。'; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(ta.value).then(showCopied).catch(function () {
+        try { ta.select(); document.execCommand('copy'); showCopied(); } catch (e) { showFailed(); }
+      });
+    } else {
+      try { ta.select(); document.execCommand('copy'); showCopied(); } catch (e) { showFailed(); }
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // iframe用出力（共通ビューア方式）: 「🌐 ウェブ用出力」のタグが埋め込み
+  // 先サイトのサニタイザーに<script>ごと消されてしまうケース向けに、
+  // 盤面を表示する「ビューアページ」を1つだけGitHub Pages等にホストし、
+  // 埋め込み先サイトには<iframe src="...">だけを貼ってもらう方式。
+  // 対局ごとのデータはURLの#以降（buildCompactPayload/encodePayloadForUrl）
+  // に載せるので、ビューアページ自体はアップロードし直す必要がなく、
+  // 棋譜が変わるたびに必要なのはURL（＝iframeタグ）の再生成だけで済む。
+  // ---------------------------------------------------------------------
+
+  var VIEWER_URL_STORAGE = 'shogi_viewer_base_url';
+  function getViewerBaseUrl() { return localStorage.getItem(VIEWER_URL_STORAGE) || ''; }
+  function setViewerBaseUrl(url) { localStorage.setItem(VIEWER_URL_STORAGE, url.trim()); }
+
+  function encodePayloadForUrl(payload) {
+    return encodeURIComponent(JSON.stringify(payload));
+  }
+
+  document.getElementById('btn-iframe-page').addEventListener('click', function () {
+    document.getElementById('viewer-download-status').textContent = '';
+    document.getElementById('viewer-url-status').textContent = '';
+    document.getElementById('iframe-generate-status').textContent = '';
+    document.getElementById('iframe-copy-status').textContent = '';
+    document.getElementById('iframe-output').value = '';
+    document.getElementById('viewer-base-url').value = getViewerBaseUrl();
+    document.getElementById('iframe-modal-overlay').style.display = 'flex';
+  });
+  document.getElementById('btn-iframe-close').addEventListener('click', function () {
+    document.getElementById('iframe-modal-overlay').style.display = 'none';
+  });
+
+  // ①: ビューアページ本体（棋譜データを含まない、使い回し用の1ファイル）
+  // をダウンロードする。GitHubへのアップロードは最初の1回だけでよい。
+  document.getElementById('btn-viewer-download').addEventListener('click', function () {
+    var html = buildViewerPageHtml();
+    var blob = new Blob([html], { type: 'text/html' });
+    var url = URL.createObjectURL(blob);
+    downloadUrl(url, 'shogi_viewer.html');
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    document.getElementById('viewer-download-status').textContent =
+      'shogi_viewer.html をダウンロードしました。GitHubにアップロードして公開URLを取得し、下の欄に保存してください。';
+  });
+  document.getElementById('btn-viewer-url-save').addEventListener('click', function () {
+    var val = document.getElementById('viewer-base-url').value.trim();
+    var statusEl = document.getElementById('viewer-url-status');
+    if (!val) { statusEl.textContent = 'URLを入力してください。'; return; }
+    setViewerBaseUrl(val);
+    statusEl.textContent = '保存しました。次回からは②だけで棋譜のURLを作れます。';
+  });
+
+  // ②: 保存済みのビューアURL + 今読み込んでいる棋譜（またはカスタム盤面）
+  // から、対局専用のURL・iframeタグをその場で作る。アップロードは不要。
+  document.getElementById('btn-iframe-generate').addEventListener('click', function () {
+    var statusEl = document.getElementById('iframe-generate-status');
+    var baseUrl = getViewerBaseUrl();
+    if (!baseUrl) {
+      statusEl.textContent = '先に①でビューアページの公開URLを保存してください。';
+      return;
+    }
+    var payload = buildCompactPayload();
+    if (!payload) {
+      statusEl.textContent = '棋譜を読み込むか、盤面カスタマイズで盤面を作成してから押してください。';
+      return;
+    }
+    var fullUrl = baseUrl + '#d=' + encodePayloadForUrl(payload);
+    document.getElementById('iframe-output').value =
+      '<iframe src="' + fullUrl + '" width="600" height="560" style="border:0;width:100%;max-width:600px;display:block;" loading="lazy"></iframe>';
+    statusEl.textContent = 'URLを生成しました。下のiframeタグをコピーして使ってください。';
+  });
+
+  document.getElementById('btn-iframe-copy').addEventListener('click', function () {
+    var ta = document.getElementById('iframe-output');
+    var statusEl = document.getElementById('iframe-copy-status');
+    function showCopied() { statusEl.textContent = 'コピーしました。'; }
+    function showFailed() { statusEl.textContent = 'コピーに失敗しました。テキストを手動で選択してコピーしてください。'; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(ta.value).then(showCopied).catch(function () {
+        try { ta.select(); document.execCommand('copy'); showCopied(); } catch (e) { showFailed(); }
+      });
+    } else {
+      try { ta.select(); document.execCommand('copy'); showCopied(); } catch (e) { showFailed(); }
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // 紙面用出力: いま画面に表示されている盤面図・持ち駒を、そのままJPG画像と
+  // EPS画像の2枚としてダウンロードする。いったんオフスクリーンのcanvasに
+  // 描画し、JPGはcanvas.toDataURLでそのまま書き出す。EPSは真のベクター
+  // ではなく、canvasのピクセルをそのままPostScriptのラスター画像として
+  // 埋め込んだ「ラスターEPS」（Illustrator/InDesignなどへの配置用途で
+  // 広く使われる形式）として書き出す。
+  // ---------------------------------------------------------------------
+
+  // Matches the on-screen mochigoma panel's notation exactly: each piece
+  // is its own character/line, with a separate kanji-numeral line
+  // directly below it when 2 or more are held (never a "歩×3"-style
+  // abbreviation).
+  // アプリ画面のmochigomaパネル（buildHandLines/groupHandLinesIntoItems/
+  // packHandItemsIntoColumns、いずれも上で定義済み）とまったく同じ並び順・
+  // 折り返しロジックで、印刷用の列データを作る。駒と枚数（二/三…）の
+  // 組が別々の列に分かれてしまわないよう、必ずアイテム単位でまとめて
+  // 詰め込む。
+  function computeHalfPrintLayout(name, fallback, hand) {
+    var nameChars = Array.from(name || fallback);
+    var rowsPerCol = Math.max(1, MOCHI_NAME_HAND_TOTAL_ROWS - nameChars.length);
+    var items = groupHandLinesIntoItems(buildHandLines(hand));
+    return { nameChars: nameChars, cols: packHandItemsIntoColumns(items, rowsPerCol) };
+  }
+
+  // Draws one character per row, centered at x - matching the on-screen
+  // mochigoma panel's 縦書き (single character per line, stacked
+  // vertically) layout exactly, rather than writing the name as one
+  // horizontal word. When flip is true (gote), every character is drawn
+  // rotated 180 degrees in place - same top-to-bottom row order as sente,
+  // just each glyph upside down - matching how the app individually
+  // rotates each mg-char for gote rather than flipping the whole block.
+  function drawVerticalColumn(ctx, chars, x, y, lineH, flip, styleFn) {
+    chars.forEach(function (t, i) {
+      var style = styleFn(i);
+      ctx.font = style.font;
+      ctx.fillStyle = style.color;
+      ctx.textAlign = 'center';
+      if (flip) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(Math.PI);
+        ctx.fillText(t, 0, 0);
+        ctx.restore();
+      } else {
+        ctx.fillText(t, x, y);
+      }
+      y += lineH;
+    });
+    return y;
+  }
+
+  // Horizontal gap between columns when a hand needs more than one
+  // (mirrors the on-screen panel's multi-column mochigoma layout).
+  var MOCHI_COL_SPACING = 20;
+
+  // アプリ画面と同じ見た目になるよう、マーカー（☗/☖）が常に盤面の
+  // 縦方向中央にいちばん近い位置にきて、持ち駒がそこから外側へ
+  // 伸びていくように描画する（renderMochiVertical/buildHalfのコメント
+  // 参照）。先手はcenterYのすぐ下から下方向へ、後手はcenterYのすぐ上
+  // から上方向へ伸びる。あふれた持ち駒の列は盤面から遠い側（左）に
+  // 追加され、主列の持ち駒が始まる行に揃える。
+  function drawHalfPrint(ctx, marker, layout, primaryX, centerY, lineH, flip, edgeGap) {
+    var primaryHand = layout.cols[0] || [];
+    var headSeq = [{ text: marker, style: 'marker' }];
+    layout.nameChars.forEach(function (ch) { headSeq.push({ text: ch, style: 'name' }); });
+    var handSeq = primaryHand.length
+      ? primaryHand.map(function (l) { return { text: l.text, style: 'piece' }; })
+      : [{ text: '（なし）', style: 'empty' }];
+    var primarySeq = headSeq.concat(handSeq);
+    if (flip) primarySeq = primarySeq.slice().reverse();
+
+    function styleFor(s) {
+      if (s === 'marker') return { font: 'bold 16px sans-serif', color: '#000' };
+      if (s === 'name') return { font: 'bold 15px serif', color: '#000' };
+      if (s === 'empty') return { font: '12px sans-serif', color: '#000' };
+      return { font: '14px serif', color: '#000' };
+    }
+
+    var startY = flip
+      ? centerY - edgeGap - (primarySeq.length - 1) * lineH
+      : centerY + edgeGap;
+    drawVerticalColumn(ctx, primarySeq.map(function (s) { return s.text; }), primaryX, startY, lineH, flip,
+      function (i) { return styleFor(primarySeq[i].style); });
+
+    var handStartY = flip ? startY : (startY + headSeq.length * lineH);
+    for (var c = 1; c < layout.cols.length; c++) {
+      var colTexts = layout.cols[c].map(function (l) { return l.text; });
+      if (flip) colTexts = colTexts.slice().reverse();
+      drawVerticalColumn(ctx, colTexts, primaryX - c * MOCHI_COL_SPACING, handStartY, lineH, flip,
+        function () { return { font: '14px serif', color: '#000' }; });
+    }
+  }
+
+  function drawBoardForPrint(boardMap, hands, names) {
+    var CELL = 56, LABEL = 30, GAP = 16, PAD = 20, lineH = 22;
+    var boardPixW = CELL * 9;
+
+    var goteLayout = computeHalfPrintLayout(names.w, '後手', hands.w);
+    var senteLayout = computeHalfPrintLayout(names.b, '先手', hands.b);
+    // 持ち駒の列数ぶんだけ、盤面のすぐ左の帯を必要な幅だけ確保する
+    // （アプリ画面と同じく、余白を作らず盤面にぴったり寄せるため）。
+    var mochiMaxCols = Math.max(goteLayout.cols.length, senteLayout.cols.length);
+    var mochiAreaW = 30 + (mochiMaxCols - 1) * MOCHI_COL_SPACING;
+
+    var boardX = PAD + mochiAreaW + GAP;
+    var boardY = PAD + LABEL;
+    var totalW = boardX + boardPixW + LABEL + PAD;
+    var totalH = PAD * 2 + LABEL + boardPixW;
+
+    var canvas = document.createElement('canvas');
+    canvas.width = totalW;
+    canvas.height = totalH;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, totalW, totalH);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 18px sans-serif';
+    for (var f = 9; f >= 1; f--) {
+      ctx.fillText(ZEN[f], boardX + (9 - f) * CELL + CELL / 2, PAD + LABEL / 2);
+    }
+    for (var r = 1; r <= 9; r++) {
+      ctx.fillText(KAN[r - 1], boardX + boardPixW + LABEL / 2, boardY + (r - 1) * CELL + CELL / 2);
+    }
+
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(boardX, boardY, boardPixW, boardPixW);
+    ctx.lineWidth = 1;
+    for (var i = 1; i < 9; i++) {
+      ctx.beginPath(); ctx.moveTo(boardX + i * CELL, boardY); ctx.lineTo(boardX + i * CELL, boardY + boardPixW); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(boardX, boardY + i * CELL); ctx.lineTo(boardX + boardPixW, boardY + i * CELL); ctx.stroke();
+    }
+
+    for (var key in boardMap) {
+      var parts = key.split(',');
+      var file = parseInt(parts[0], 10), rank = parseInt(parts[1], 10);
+      var p = boardMap[key];
+      var cx = boardX + (9 - file) * CELL + CELL / 2;
+      var cy = boardY + (rank - 1) * CELL + CELL / 2;
+      ctx.save();
+      ctx.translate(cx, cy);
+      if (p.owner === 'w') ctx.rotate(Math.PI);
+      ctx.fillStyle = '#000';
+      var label = E.KANJI[p.type];
+      // 「強調」した駒は明朝体(serif)からゴシック体(sans-serif)に変え、
+      // 文字も一回り大きくする（アプリ画面の.piece.emphasisと同じ考え方）。
+      var fontFamily = p.emphasis ? 'sans-serif' : 'serif';
+      if (label.length > 1) {
+        // 成銀・成桂・成香: keep the vertical size (font-size/line spacing)
+        // unchanged, but widen the characters via a horizontal-only scale
+        // (matches the on-screen .piece.stacked span and the embed's
+        // paintBoardInto). textAlign stays "center", so scaling x only
+        // widens the glyph around the same center point - no position
+        // math needed.
+        ctx.font = 'bold ' + (p.emphasis ? 19 : 15) + 'px ' + fontFamily;
+        ctx.save();
+        ctx.scale(1.4, 1);
+        ctx.fillText(label[0], 0, -9);
+        ctx.fillText(label[1], 0, 9);
+        ctx.restore();
+      } else {
+        ctx.font = 'bold ' + (p.emphasis ? 34 : 28) + 'px ' + fontFamily;
+        ctx.fillText(label, 0, 0);
+      }
+      ctx.restore();
+    }
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    var primaryX = boardX - GAP;
+    var centerY = boardY + boardPixW / 2;
+    var edgeGap = 10;
+
+    // 後手は盤面中央のすぐ上から上方向へ、先手は盤面中央のすぐ下から
+    // 下方向へ。マーカー（☗/☖）が常に中央にいちばん近い位置にくる点も
+    // 含め、アプリ画面（renderMochiVertical/buildHalf）と同じ並び。
+    drawHalfPrint(ctx, '☖', goteLayout, primaryX, centerY, lineH, true, edgeGap);
+    drawHalfPrint(ctx, '☗', senteLayout, primaryX, centerY, lineH, false, edgeGap);
+
+    return canvas;
+  }
+
+  function downloadUrl(url, filename) {
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  // Wraps the canvas's raw pixels as a "raster EPS" - not a true vector
+  // graphic, but a standard, widely-supported technique (PostScript's
+  // colorimage operator fed with hex-encoded RGB data) for producing an
+  // EPS file that page-layout tools like Illustrator/InDesign can place
+  // directly, with no server or external library needed.
+  function canvasToEPS(canvas) {
+    var w = canvas.width, h = canvas.height;
+    var ctx = canvas.getContext('2d');
+    var data = ctx.getImageData(0, 0, w, h).data;
+    var HEX = '0123456789ABCDEF';
+    var lines = [];
+    lines.push('%!PS-Adobe-3.0 EPSF-3.0');
+    lines.push('%%BoundingBox: 0 0 ' + w + ' ' + h);
+    lines.push('%%HiResBoundingBox: 0 0 ' + w + ' ' + h);
+    lines.push('%%Creator: NEXT将棋');
+    lines.push('%%EndComments');
+    lines.push('gsave');
+    lines.push(w + ' ' + h + ' scale');
+    lines.push(w + ' ' + h + ' 8 [' + w + ' 0 0 -' + h + ' 0 ' + h + ']');
+    lines.push('currentfile /ASCIIHexDecode filter false 3 colorimage');
+    var row = [];
+    for (var i = 0; i < data.length; i += 4) {
+      var r = data[i], g = data[i + 1], b = data[i + 2];
+      row.push(HEX[(r >> 4) & 15], HEX[r & 15], HEX[(g >> 4) & 15], HEX[g & 15], HEX[(b >> 4) & 15], HEX[b & 15]);
+      if (row.length >= 60) { lines.push(row.join('')); row = []; }
+    }
+    if (row.length) lines.push(row.join(''));
+    lines.push('>');
+    lines.push('grestore');
+    lines.push('%%EOF');
+    return lines.join('\n');
+  }
+
+  function exportPrintImages() {
+    var boardMap, hands, names;
+    if (mode === 'custom' && customState) {
+      boardMap = customState.board;
+      hands = customState.hands;
+      names = {
+        b: (senteNameInput.value && senteNameInput.value.trim()) || '先手',
+        w: (goteNameInput.value && goteNameInput.value.trim()) || '後手'
+      };
+    } else {
+      var state = computeStateAt(currentIndex);
+      boardMap = state.board;
+      hands = state.hands;
+      names = {
+        b: (senteNameInput.value && senteNameInput.value.trim()) || (game.names && game.names.b) || '先手',
+        w: (goteNameInput.value && goteNameInput.value.trim()) || (game.names && game.names.w) || '後手'
+      };
+    }
+    var canvas = drawBoardForPrint(boardMap, hands, names);
+    downloadUrl(canvas.toDataURL('image/jpeg', 0.95), 'shogi_board.jpg');
+    var epsBlob = new Blob([canvasToEPS(canvas)], { type: 'application/postscript' });
+    var epsUrl = URL.createObjectURL(epsBlob);
+    downloadUrl(epsUrl, 'shogi_board.eps');
+    setTimeout(function () { URL.revokeObjectURL(epsUrl); }, 2000);
+  }
+
+  document.getElementById('btn-print-output').addEventListener('click', exportPrintImages);
+
+  // ---------------------------------------------------------------------
+  // Board customization: OCR reading of an externally-created board image,
+  // plus manual correction (piece picker + hand-piece steppers).
+  // ---------------------------------------------------------------------
+
+  document.getElementById('btn-blank-board').addEventListener('click', function () {
+    enterCustomMode({ board: {}, hands: { b: {}, w: {} } });
+  });
+  document.getElementById('btn-initial-board').addEventListener('click', function () {
+    var st = E.initialState();
+    enterCustomMode({ board: st.board, hands: { b: {}, w: {} } });
+  });
+
+  // 「強調」: 最後にクリックしたマス（selectedCell）に駒があれば、
+  // そのフラグをオン/オフする。paintBoard側でこのフラグを見て、明朝体
+  // →ゴシック体・大きめの文字に切り替える（紙面用出力・ウェブ用出力にも
+  // 同じ考え方で反映する）。
+  document.getElementById('btn-emphasis').addEventListener('click', function () {
+    if (mode !== 'custom' || !selectedCell) return;
+    var p = customState.board[selectedCell];
+    if (!p) return;
+    p.emphasis = !p.emphasis;
+    renderCustom();
+  });
+
+  // 盤面の駒を削除する（不足駒として右カラムに戻る）ドロップ先。supply
+  // からのドラッグは「まだ置いていない」だけなので何もしない。
+  (function () {
+    var deleteZoneEl = document.getElementById('edit-delete-zone');
+    deleteZoneEl.addEventListener('dragover', function (e) {
+      if (mode === 'custom') e.preventDefault();
+    });
+    deleteZoneEl.addEventListener('dragenter', function () {
+      if (mode === 'custom') deleteZoneEl.classList.add('drag-over');
+    });
+    deleteZoneEl.addEventListener('dragleave', function () {
+      deleteZoneEl.classList.remove('drag-over');
+    });
+    deleteZoneEl.addEventListener('drop', function (e) {
+      deleteZoneEl.classList.remove('drag-over');
+      if (mode !== 'custom') return;
+      e.preventDefault();
+      var src = e.dataTransfer.getData('text/plain');
+      if (src && src.indexOf('board:') === 0) {
+        delete customState.board[src.slice(6)];
+        renderCustom();
+      }
+    });
+  })();
+
+  document.getElementById('btn-ocr-toggle').addEventListener('click', function () {
+    var dz = document.getElementById('ocr-dropzone');
+    dz.style.display = dz.style.display === 'none' ? '' : 'none';
+  });
+  var dropzone = document.getElementById('ocr-dropzone');
+  var ocrFileInput = document.getElementById('ocr-file-input');
+  dropzone.addEventListener('click', function () { ocrFileInput.click(); });
+  dropzone.addEventListener('dragover', function (e) { e.preventDefault(); dropzone.classList.add('dragover'); });
+  dropzone.addEventListener('dragleave', function () { dropzone.classList.remove('dragover'); });
+  dropzone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) processOcrImage(file);
+  });
+  ocrFileInput.addEventListener('change', function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (file) processOcrImage(file);
+  });
+
+  // ---------------------------------------------------------------------
+  // OCR via Google Gemini (replaces an earlier Tesseract.js/WASM-in-a-
+  // Worker approach). Chrome/Edge flatly refuse to start a Web Worker from
+  // a page opened as a local file (file://) - "'file:' URLs are treated as
+  // unique security origins" - which is a hard browser restriction with no
+  // code-level workaround, and Tesseract.js requires a Worker to run at
+  // all. Sending the image to Gemini's API instead needs only a plain
+  // fetch() to an external https:// endpoint, which file:// pages can do
+  // normally, so this sidesteps the restriction entirely. It also reads
+  // the whole board in one request instead of 81 separate per-cell OCR
+  // passes.
+  // ---------------------------------------------------------------------
+
+  var GEMINI_API_KEY_STORAGE = 'shogi_gemini_api_key';
+  function getGeminiApiKey() { return localStorage.getItem(GEMINI_API_KEY_STORAGE) || ''; }
+  function setGeminiApiKey(key) { localStorage.setItem(GEMINI_API_KEY_STORAGE, key.trim()); }
+
+  (function () {
+    var input = document.getElementById('gemini-key-input');
+    var saveBtn = document.getElementById('gemini-key-save');
+    var status = document.getElementById('gemini-key-status');
+    function updateStatus() {
+      var key = getGeminiApiKey();
+      if (key) {
+        status.textContent = '設定済み';
+        status.style.color = '#2e7d32';
+        input.value = key;
+      } else {
+        status.textContent = '未設定';
+        status.style.color = '#c62828';
+      }
+    }
+    saveBtn.addEventListener('click', function () {
+      var val = input.value.trim();
+      if (!val) return;
+      setGeminiApiKey(val);
+      updateStatus();
+    });
+    updateStatus();
+  })();
+
+  document.getElementById('btn-api-key-settings').addEventListener('click', function () {
+    document.getElementById('apikey-modal-overlay').style.display = 'flex';
+  });
+  document.getElementById('btn-apikey-close').addEventListener('click', function () {
+    document.getElementById('apikey-modal-overlay').style.display = 'none';
+  });
+
+  // Best-effort stringification of a caught error/rejection - some
+  // failures (network errors, non-Error rejections) have no .message,
+  // which otherwise shows up as the unhelpful text "undefined".
+  //
+  // "Failed to fetch" specifically means the browser could not even reach
+  // the server (this happens before any HTTP response, so it's distinct
+  // from an API error response). Previously this was invisible to users:
+  // the old two-image OCR scheme wrapped each of its two requests in its
+  // own .catch() that silently fell back to an empty board, so a flaky/
+  // failing network call never surfaced an error - it just quietly
+  // produced a worse (or empty) reading, which looked like "OCR accuracy
+  // is bad" rather than "OCR is failing to connect". Now that there's
+  // only one request with no such fallback, this kind of failure is
+  // visible.
+  //
+  // An earlier version of this message suggested a company-network
+  // proxy/firewall block as the likely cause. That turned out to be a
+  // poor guess: the user confirmed a different app on the very same
+  // machine/network (sports-results.html) uses this identical Gemini
+  // endpoint successfully, which rules out a blanket network block. The
+  // much more likely cause (see cropAndUpscaleBoard's comment) was that
+  // this app, unlike that sibling app, never downscaled large source
+  // photos before uploading them - a multi-MB base64 request body can
+  // fail outright or time out as "Failed to fetch" long before reaching
+  // any application-level error handling. That upload-size issue is now
+  // fixed, so this message stays intentionally more neutral/general
+  // rather than pointing at a specific (and previously wrong) cause.
+  function describeError(err) {
+    if (!err) return '不明なエラー';
+    if (err.message) {
+      if (/failed to fetch|networkerror|network error|load failed/i.test(err.message)) {
+        return err.message + '（サーバーに接続できませんでした。画像が大きすぎる場合や通信が不安定な場合に発生することがあります。しばらく待って再度お試しいただき、改善しない場合は別の画像や別の通信環境でもお試しください。）';
+      }
+      return err.message;
+    }
+    if (typeof err === 'string') return err;
+    try { return JSON.stringify(err); } catch (e) { return String(err); }
+  }
+
+  // gemini-2.5-pro is not available to every API key/plan (some keys only
+  // have flash access), and returned unusable/empty responses for some
+  // users, so this uses the more widely-available gemini-2.5-flash. Most
+  // of the accuracy work instead lives in the prompt (systematic 81-square
+  // enumeration below) and the image pre-processing (crop/upscale).
+  var GEMINI_MODEL_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=';
+
+  // 以前は「正立のまま」と「180度回転」の2枚の画像をそれぞれ別のGemini
+  // 呼び出しで読み取り、各呼び出しでは正立して見える駒だけを判定させて
+  // いた（回転した文字はモデルが読み違えやすいという想定）。しかし実際の
+  // 精度はむしろ悪化しており、2枚の画像を別々の座標系で読み取ってから
+  // 座標変換して突き合わせる処理（旧buildStateFromTwoBoards、file/rankを
+  // 10-値で反転するロジック）自体もズレの原因になっていたと考えられる。
+  //
+  // そこで、画像は1枚（正立のまま）だけを送り、81マスそれぞれについて
+  // 「駒がない」か「駒があり、正立しているか上下さかさまか」をモデルに
+  // 直接判定させる方式に変更した。これは駒の種類14種×向き2パターン＋
+  // 空欄1種＝29通りの分類にあたるが、29種類の専用コード名を新しく作るより
+  // 既存の駒種コード（KANJI/HAND_EDIT_TYPESと共通のFU/KY/…)をそのまま使い、
+  // 向きだけを別のupsideDownフィールド（真偽値）に分けて出力させる方が、
+  // モデルにとっても素直で、こちら側の実装も座標変換や2枚のマージが不要に
+  // なりシンプルになる。upsideDownの値がそのまま持ち主に対応する
+  // （false=正立=先手、true=上下さかさま=後手）。
+  var GEMINI_PROMPT = [
+    '添付の画像は将棋の盤面図です。以下の手順に従って慎重に読み取り、指定のJSON形式のみを出力してください（説明文やコードブロックの記号（```）は一切付けないでください）。',
+    '',
+    '手順:',
+    '1. まず盤面（9x9の格子）の外枠がどこかを特定する。格子線・影・盤の木目模様を駒と誤認しないこと。',
+    '2. 段(rank)を1段目から9段目まで順番に処理する。各段について、筋(file)を9筋から1筋まで順番に確認する。',
+    '3. 81マスすべてについて、必ず次を判定する。マスに駒がなければ type を "EMPTY" にする。駒があれば、その駒の種類コードを type に記録し、さらに文字の向きが正立（通常通り読める向き）かupsideDown（180度回転して上下さかさまに書かれている）かを upsideDown フィールドに true/false で記録する。1マスも飛ばさないこと。',
+    '4. 盤の外側にある持ち駒を、先手側・後手側それぞれについて数える。',
+    '',
+    '出力するJSON形式（board配列には必ず81マス分すべてを含めること。空マスも省略しない）:',
+    '{"board":[{"file":9,"rank":1,"type":"EMPTY"},{"file":8,"rank":1,"type":"FU","upsideDown":false}, ...(残り79マス)...],"hands":{"b":{"FU":0},"w":{"FU":0}}}',
+    '',
+    '座標の決まり: 筋(file)はこの画像の中で左端が9、右端が1（左から右に9,8,7,6,5,4,3,2,1の順）。段(rank)はこの画像の中で上端が1、下端が9。',
+    '駒の種類コード: 歩=FU 香車=KY 桂馬=KE 銀将=GI 金将=KI 角行=KA 飛車=HI 玉将/王将=OU と金=TO 成香=NY 成桂=NK 成銀=NG 竜馬/馬=UM 竜王/龍=RY',
+    '向きの決まり: 文字が普通に読める向き（回転していない）ならupsideDownはfalse。文字が180度回転して上下逆さまに書かれているならupsideDownはtrue。EMPTYのマスにはupsideDownフィールドは不要。',
+    '持ち駒はhandsのb（先手）とw（後手）にそれぞれ種類コードと枚数で記載し、0枚の種類は省略して構いません。',
+    'JSON以外の文字は一切出力しないでください。'
+  ].join('\n');
+
+  // Returns a warning string listing any piece type whose total count
+  // (across both boards + both hands, promoted pieces counted under their
+  // base type) exceeds what's physically possible - a strong signal that
+  // at least one square was misread, even though the OCR pipeline itself
+  // reported success. PIECE_SET_MAX/computeQuotaStatus are shared with the
+  // drag-and-drop board editor's supply column (declared near paintBoard).
+  function checkPieceCountSanity(board, hands) {
+    var status = computeQuotaStatus(board, hands);
+    var over = Object.keys(status.over);
+    if (over.length === 0) return '';
+    var names = over.map(function (type) { return E.KANJI[type] + '(' + status.totals[type] + '枚)'; }).join('、');
+    return '※駒数の矛盾を検出しました: ' + names + '。読み取りミスの可能性が高いので「修正」で確認してください。';
+  }
+
+  // Finds the board's outer bounding box inside the dropped image by
+  // looking for rows/columns with a high proportion of dark pixels - the
+  // board's grid lines span almost the full width/height in a solid dark
+  // stroke, which stands out from surrounding whitespace/UI. Cropping to
+  // this box before sending to Gemini removes distracting surrounding
+  // content and effectively increases each square's resolution in the
+  // image the model sees. Falls back to the whole image if no such
+  // pattern is found (e.g. a screenshot that's already tightly cropped).
+  function detectBoardBBox(canvas) {
+    var w = canvas.width, h = canvas.height;
+    var ctx = canvas.getContext('2d');
+    var data;
+    try {
+      data = ctx.getImageData(0, 0, w, h).data;
+    } catch (e) {
+      return { x: 0, y: 0, w: w, h: h };
+    }
+    function luminanceAt(x, y) {
+      var i = (y * w + x) * 4;
+      return 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    }
+    var stepX = Math.max(1, Math.floor(w / 300));
+    var stepY = Math.max(1, Math.floor(h / 300));
+    var rowDark = new Array(h);
+    for (var y = 0; y < h; y++) {
+      var count = 0, total = 0;
+      for (var x = 0; x < w; x += stepX) { total++; if (luminanceAt(x, y) < 120) count++; }
+      rowDark[y] = total ? count / total : 0;
+    }
+    var colDark = new Array(w);
+    for (var x2 = 0; x2 < w; x2++) {
+      var count2 = 0, total2 = 0;
+      for (var y2 = 0; y2 < h; y2 += stepY) { total2++; if (luminanceAt(x2, y2) < 120) count2++; }
+      colDark[x2] = total2 ? count2 / total2 : 0;
+    }
+    var THRESH = 0.35;
+    var rows = [];
+    for (var yy = 0; yy < h; yy++) if (rowDark[yy] > THRESH) rows.push(yy);
+    var cols = [];
+    for (var xx = 0; xx < w; xx++) if (colDark[xx] > THRESH) cols.push(xx);
+    if (rows.length < 2 || cols.length < 2) return { x: 0, y: 0, w: w, h: h };
+    var top = rows[0], bottom = rows[rows.length - 1];
+    var left = cols[0], right = cols[cols.length - 1];
+    if (bottom - top < h * 0.3 || right - left < w * 0.3) return { x: 0, y: 0, w: w, h: h };
+    // small margin so grid lines right at the edge aren't clipped
+    var mx = (right - left) * 0.02, my = (bottom - top) * 0.02;
+    return {
+      x: Math.max(0, left - mx), y: Math.max(0, top - my),
+      w: Math.min(w, right - left + 2 * mx), h: Math.min(h, bottom - top + 2 * my)
+    };
+  }
+
+  // Crops to the detected board area and scales it so the board is
+  // ~1100px on its longer side - small photos/screenshots are upscaled so
+  // the model has enough pixels per square to read reliably, but large
+  // photos (e.g. a phone camera shot, easily 3000-4000px on a side) are
+  // now also downscaled to the same ~1100px target.
+  //
+  // Downscaling large images matters a lot in practice: this used to be
+  // Math.max(1, target / longerSide), which only ever upscaled and left
+  // very large source photos completely untouched. A 3000x3000+ crop
+  // encoded as JPEG can be several MB of base64 in the POST body, and a
+  // sibling app on the same machine/network (sports-results.html) that
+  // uses this same Gemini endpoint successfully always caps its upload at
+  // a small fixed width (660px) before sending - strong evidence that an
+  // oversized request body/slow upload, not a network block, is the
+  // likely cause of "Failed to fetch" here. Removing the "never shrink"
+  // clamp brings this in line with that proven-working approach while
+  // still using a larger target (1100px) appropriate for a 9x9 board.
+  function cropAndUpscaleBoard(srcCanvas) {
+    var bbox = detectBoardBBox(srcCanvas);
+    var target = 1100;
+    var scale = target / Math.max(bbox.w, bbox.h);
+    var out = document.createElement('canvas');
+    out.width = Math.round(bbox.w * scale);
+    out.height = Math.round(bbox.h * scale);
+    var ctx = out.getContext('2d');
+    ctx.drawImage(srcCanvas, bbox.x, bbox.y, bbox.w, bbox.h, 0, 0, out.width, out.height);
+    return out;
+  }
+
+  // 持ち駒の枚数を安全な整数に正規化する（不正な値・負の数・対象外の種類を
+  // 除く）。以前は2枚の画像それぞれの読み取り結果をmergeHandsで突き合わせて
+  // いたが、今は1回の呼び出し結果しかないので単純な正規化のみで済む。
+  function sanitizeHands(handsRaw) {
+    var out = { b: {}, w: {} };
+    ['b', 'w'].forEach(function (owner) {
+      var src = (handsRaw && handsRaw[owner]) || {};
+      HAND_EDIT_TYPES.forEach(function (type) {
+        var n = parseInt(src[type], 10) || 0;
+        if (n > 0) out[owner][type] = n;
+      });
+    });
+    return out;
+  }
+
+  // 1回のGemini呼び出しで得た81マス分の判定結果を盤面の状態に変換する。
+  // 各マスの upsideDown フィールドがそのまま持ち主を表す
+  // （false=正立=先手、true=上下さかさま=後手）ため、以前のように2枚の
+  // 画像の結果を別々の座標系で読み取ってから座標変換して突き合わせる
+  // 処理（旧buildStateFromTwoBoards）は不要になった。
+  function buildStateFromBoard(boardArr, handsRaw) {
+    var board = {};
+    var filledCount = 0;
+    (boardArr || []).forEach(function (p) {
+      if (!p) return;
+      var file = Number(p.file), rank = Number(p.rank);
+      if (!(file >= 1 && file <= 9) || !(rank >= 1 && rank <= 9)) return;
+      if (!p.type || p.type === 'EMPTY' || !E.KANJI[p.type]) return;
+      board[file + ',' + rank] = { type: p.type, owner: p.upsideDown ? 'w' : 'b' };
+      filledCount++;
+    });
+    return { state: { board: board, hands: sanitizeHands(handsRaw) }, filledCount: filledCount };
+  }
+
+  // A bare fetch() rejection ("Failed to fetch") means the request never
+  // even reached the server - this can be a genuinely transient hiccup
+  // (a proxy/VPN blip, a momentary DNS failure) rather than a persistent
+  // block, so it's worth quietly retrying a couple of times with a short
+  // delay before giving up and surfacing an error. This only retries the
+  // network-level fetch() call itself, not HTTP error responses (which
+  // resolve normally and are turned into thrown Errors further down in
+  // recognizeSingleImage) - a bad API key or quota error would just fail
+  // the same way every time, so retrying those would only waste time.
+  function fetchWithRetry(url, opts, retriesLeft) {
+    return fetch(url, opts).catch(function (err) {
+      if (retriesLeft <= 0) throw err;
+      return new Promise(function (resolve) { setTimeout(resolve, 1000); }).then(function () {
+        return fetchWithRetry(url, opts, retriesLeft - 1);
+      });
+    });
+  }
+
+  // Sends the (single) board image to Gemini and returns its parsed
+  // {board, hands} response. Used once, by recognizeBoardWithGemini below -
+  // the single-image 29-way per-square scheme (empty / 14 upright / 14
+  // upside-down types) removes the need for a second, pre-rotated image.
+  function recognizeSingleImage(apiKey, canvas, mimeType) {
+    // mimeType is always 'image/jpeg' now (processOcrImage forces this
+    // regardless of the source file's original format) so the upload
+    // stays compact; quality 0.92 matches the sports-results app's own
+    // Gemini OCR calls.
+    var quality = mimeType === 'image/jpeg' ? 0.92 : undefined;
+    var base64 = canvas.toDataURL(mimeType, quality).split(',')[1];
+    return fetchWithRetry(GEMINI_MODEL_URL + encodeURIComponent(apiKey), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inline_data: { mime_type: mimeType, data: base64 } },
+            { text: GEMINI_PROMPT }
+          ]
+        }],
+        // Only temperature is set here - no maxOutputTokens cap and no
+        // thinkingConfig. Forcing thinkingBudget to 0 (tried previously)
+        // turned out to be actively harmful for this task: with thinking
+        // disabled, the model stopped actually inspecting the 81 squares
+        // and instead answered with a generic/default board (e.g. the
+        // standard starting position) regardless of what image was sent -
+        // this is what caused "40 マス認識" with a board that never
+        // changed from the initial setup. Letting the model think keeps
+        // it grounded in the actual pixels; leaving maxOutputTokens
+        // unset avoids arbitrarily starving that thinking process.
+        generationConfig: { temperature: 0 }
+      })
+    }, 2).then(function (resp) {
+      if (resp.ok) return resp.json();
+      return resp.json().catch(function () { return {}; }).then(function (errBody) {
+        throw new Error((errBody.error && errBody.error.message) || ('HTTP ' + resp.status));
+      });
+    }).then(function (data) {
+      var candidate = data.candidates && data.candidates[0];
+      var text = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text;
+      var match = text && text.match(/\{[\s\S]*\}/);
+      if (!match) {
+        var reason = candidate && candidate.finishReason;
+        throw new Error('AIの応答からJSONを取り出せませんでした' + (reason ? '（理由: ' + reason + '）' : ''));
+      }
+      try {
+        return JSON.parse(match[0]);
+      } catch (e) {
+        throw new Error('AIの応答をJSONとして解釈できませんでした');
+      }
+    });
+  }
+
+  function recognizeBoardWithGemini(apiKey, canvas, mimeType) {
+    return recognizeSingleImage(apiKey, canvas, mimeType).then(function (data) {
+      return buildStateFromBoard(data.board, data.hands);
+    });
+  }
+
+  // ocr-status は盤面のすぐ上に移動した目立つバナー（_part1.htmlの
+  // .ocr-status-banner）。空の時は非表示にし、テキストがある時だけ表示する。
+  function setOcrStatus(text) {
+    var statusEl = document.getElementById('ocr-status');
+    statusEl.textContent = text || '';
+    statusEl.style.display = text ? '' : 'none';
+  }
+
+  function processOcrImage(file) {
+    var apiKey = getGeminiApiKey();
+    if (!apiKey) {
+      setOcrStatus('先に上の欄にGemini APIキーを保存してください。');
+      return;
+    }
+    setOcrStatus('画像を読み込み中...');
+    var img = new Image();
+    var url = URL.createObjectURL(file);
+    img.onload = function () {
+      URL.revokeObjectURL(url);
+      setOcrStatus('AIが盤面を解析中...（数秒〜数十秒かかります）');
+      var rawCanvas = document.createElement('canvas');
+      rawCanvas.width = img.naturalWidth || img.width;
+      rawCanvas.height = img.naturalHeight || img.height;
+      rawCanvas.getContext('2d').drawImage(img, 0, 0);
+      var canvas = cropAndUpscaleBoard(rawCanvas);
+      // 送信フォーマットは常にJPEGに統一する（元がPNGのスクリーンショットで
+      // あっても同様）。PNGは可逆圧縮のため写真的な画像では容量が大きくなり
+      // やすく、同じGeminiエンドポイントで問題なく動いているスポーツ成績
+      // アプリ側もアップロード時は常にJPEGに変換している。この統一により
+      // アップロード容量を確実に小さく保てる。
+      var mimeType = 'image/jpeg';
+      recognizeBoardWithGemini(apiKey, canvas, mimeType).then(function (result) {
+        enterCustomMode(result.state);
+        var warning = checkPieceCountSanity(result.state.board, result.state.hands);
+        if (result.filledCount === 0) {
+          setOcrStatus('駒を認識できませんでした。画像が9x9の盤面を大きくはっきり写しているか確認し、「修正」で手動入力してください。');
+        } else {
+          setOcrStatus('読み取り完了（' + result.filledCount + ' マス認識）。誤りがあれば「修正」で直してください。' + (warning ? '\n' + warning : ''));
+        }
+      }).catch(function (err) {
+        if (window.console && console.error) console.error('OCR処理でエラーが発生しました:', err);
+        setOcrStatus('読み取りに失敗しました: ' + describeError(err) + '（改善しない場合は「修正」または「初期配置/空の盤面から編集」で手動入力できます）');
+      });
+    };
+    img.onerror = function () {
+      setOcrStatus('画像の読み込みに失敗しました。');
+    };
+    img.src = url;
+  }
+
+  // KIFファイルの「*」始まりの行（コメント）を除き、棋譜本体だけを残す。
+  function stripCommentLines(text) {
+    return text.split(/\r?\n/).filter(function (line) {
+      return line.trim().indexOf('*') !== 0;
+    }).join('\n');
+  }
+
+  function loadKifFile(file) {
+    fileStatusEl.textContent = '読み込み中: ' + file.name;
+    file.arrayBuffer().then(function (buf) {
+      var text = stripCommentLines(decodeKifuBuffer(buf));
+      kifuTextEl.value = text;
+      fileStatusEl.textContent = '読み込み完了: ' + file.name;
+      loadKifu(text);
+    }).catch(function (err) {
+      fileStatusEl.textContent = 'ファイルの読み込みに失敗しました: ' + err.message;
+    });
+  }
+
+  document.getElementById('btn-kif-dropzone-toggle').addEventListener('click', function () {
+    var dz = document.getElementById('kif-dropzone');
+    var show = dz.style.display === 'none';
+    dz.style.display = show ? '' : 'none';
+    // 開いている間はこのボタンを赤く（primaryスタイル）して、開閉状態が
+    // 見た目でも分かるようにする。かわりに「棋譜を読み込む」ボタンは
+    // 白に戻し、いま有効な読み込み方法がひと目で分かるようにする。
+    this.classList.toggle('primary', show);
+    document.getElementById('btn-load').classList.toggle('primary', !show);
+  });
+  var kifDropzone = document.getElementById('kif-dropzone');
+  var kifFileInput = document.getElementById('kifu-file');
+  kifDropzone.addEventListener('click', function () { kifFileInput.click(); });
+  kifDropzone.addEventListener('dragover', function (e) { e.preventDefault(); kifDropzone.classList.add('dragover'); });
+  kifDropzone.addEventListener('dragleave', function () { kifDropzone.classList.remove('dragover'); });
+  kifDropzone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    kifDropzone.classList.remove('dragover');
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) loadKifFile(file);
+  });
+  kifFileInput.addEventListener('change', function (evt) {
+    var file = evt.target.files && evt.target.files[0];
+    if (file) loadKifFile(file);
+  });
+
+  function decodeKifuBuffer(buf) {
+    // Try UTF-8 (with BOM handling) first; fall back to Shift-JIS for older KIF files.
+    try {
+      var utf8 = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+      if (utf8.indexOf('�') === -1) return utf8;
+    } catch (e) { /* fall through */ }
+    try {
+      return new TextDecoder('shift-jis').decode(buf);
+    } catch (e) {
+      try { return new TextDecoder('utf-8').decode(buf); } catch (e2) { return ''; }
+    }
+  }
+
+  // initial render (empty board = starting position, no moves loaded)
+  renderWarnings();
+  render();
+})();
+</script></body></html>
