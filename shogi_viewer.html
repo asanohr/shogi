@@ -11,9 +11,9 @@
   [data-r="boardCol"] { display:block; width:100%; text-align:center; }
   [data-r="movelistWrap"] { display:block !important; width:100% !important; box-sizing:border-box; padding:10px 0 0 0 !important; }
   [data-r="movelistWrap"] > div { height:235px !important; }
-  #controls [data-r="mobileBreak"] { display:inline !important; }
+  #controls [data-r="mobileBreak"] { display:block !important; height:14px !important; }
   #controls button, #controls select { font-size:16px !important; padding:9px 14px !important; }
-  #controls span[data-r="counter"] { display:inline-block !important; margin-top:10px !important; font-size:15px !important; }
+  #controls span[data-r="counter"] { display:inline-block !important; margin-top:14px !important; font-size:15px !important; }
 }
 </style>
 </head>
@@ -194,14 +194,22 @@ var DEMOTE = {TO:"FU",NY:"KY",NK:"KE",NG:"GI",UM:"KA",RY:"HI"};
 function baseTypeOf(t){ return DEMOTE[t] || t; }
 function cloneMap(m){ var o = {}; for (var k in m) o[k] = m[k]; return o; }
 function cloneHands(h){ return { b: cloneMap(h.b), w: cloneMap(h.w) }; }
+function formatConsiderationTime(raw){
+  if (!raw) return "";
+  var minutes, idx = raw.indexOf(":");
+  if (idx >= 0) { minutes = parseInt(raw.slice(0, idx), 10) || 0; } else { minutes = 0; }
+  if (minutes < 1) return "";
+  return String(minutes);
+}
 function notationForCompact(mv, prevTo){
   var mark = mv.color === "b" ? "▲" : "△";
   var same = prevTo && prevTo.file === mv.to.file && prevTo.rank === mv.to.rank;
   var s = same
-    ? (mark + "同　" + KANJI[mv.baseType])
+    ? (mark + (mv.promoted ? "同" : "同　") + KANJI[mv.baseType])
     : (mark + (ZEN[mv.to.file] || mv.to.file) + (KAN[mv.to.rank - 1] || mv.to.rank) + KANJI[mv.baseType]);
   if (mv.drop) s += "打";
   if (mv.promoted) s += "成";
+  s += formatConsiderationTime(mv.time);
   return s;
 }
 function applyRecordToState(state, mv){
