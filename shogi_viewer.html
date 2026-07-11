@@ -63,7 +63,7 @@ var KAN = "一二三四五六七八九";
 var CELL_CSS = "border:1px solid #6b4d24;text-align:center;vertical-align:middle;font-size:22px;user-select:none;box-sizing:border-box;width:38px;height:38px;background:#dcb35c;padding:0;";
 var LABEL_CSS = "text-align:center;vertical-align:middle;font-size:14px;color:#5a4a34;box-sizing:border-box;padding:0;border:none;background:#dcb35c;";
 var KOMA_W = 30, KOMA_H = 34;
-var KOMA_CLIP = "polygon(50% 0%,100% 22%,100% 100%,0% 100%,0% 22%)";
+var KOMA_CLIP = "polygon(50% 0%,96% 22%,100% 100%,0% 100%,4% 22%)";
 function kanjiNum(n){ if (n<=0) return ""; if (n<=9) return KAN[n-1]; if (n<20) return n===10 ? "十" : ("十" + KAN[n-11]); return String(n); }
 function buildKomaShape(w, h){
   var wrap = document.createElement("div");
@@ -100,9 +100,9 @@ function buildBoardSkeleton(boardAreaEl, crop){
   var viewW = crop.w * fullW, viewH = crop.h * fullH;
   var offX = crop.x * fullW, offY = crop.y * fullH;
   boardAreaEl.innerHTML = "";
-  boardAreaEl.setAttribute("style", "display:inline-block;background:#dcb35c;padding:0 0 6px 6px;position:relative;overflow:hidden;width:" + viewW + "px;height:" + viewH + "px;");
+  boardAreaEl.setAttribute("style", "display:inline-block;background:#dcb35c;padding:0 0 6px 6px;position:relative;overflow:hidden;width:" + (viewW + 6) + "px;height:" + viewH + "px;");
   var inner = document.createElement("div");
-  inner.setAttribute("style", "position:absolute;left:" + (-offX) + "px;top:" + (-offY) + "px;width:" + fullW + "px;height:" + fullH + "px;");
+  inner.setAttribute("style", "position:absolute;left:" + (6 - offX) + "px;top:" + (-offY) + "px;width:" + fullW + "px;height:" + fullH + "px;");
   for (var k = 0; k < 9; k++) {
     var f = 9 - k;
     var lbl = document.createElement("div");
