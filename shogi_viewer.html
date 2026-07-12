@@ -40,7 +40,7 @@
 <div data-r="mochiSente"></div>
 </td>
 <td data-r="movelistWrap" valign="top" style="vertical-align:top;padding:0 0 0 8px;width:150px;display:none;">
-<div style="height:390px;overflow-y:auto;border:1px solid #d8cdb8;border-radius:4px;">
+<div data-r="movelistScroll" style="height:390px;overflow-y:auto;border:1px solid #d8cdb8;border-radius:4px;">
 <table style="width:100%;border-collapse:collapse;font-size:12px;">
 <thead><tr>
 <th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;width:28px;"></th>
@@ -251,6 +251,7 @@ var mochiGoteEl = rEl("mochiGote");
 var mochiSenteEl = rEl("mochiSente");
 var counterEl = rEl("counter");
 var moveBodyEl = rEl("moveBody");
+var movelistScrollEl = rEl("movelistScroll");
 var speedSelect = rEl("speed");
 var cellEls = null;
 var DATA = null;
@@ -264,11 +265,20 @@ function render(){
   renderMochiRowInto(mochiSenteEl, snap.hands.b, DATA.names && DATA.names.b, "先手", false);
   applyMochiOffset(mochiGoteEl, DATA.mochiPos && DATA.mochiPos.w);
   applyMochiOffset(mochiSenteEl, DATA.mochiPos && DATA.mochiPos.b);
-  buildMoveRowsInto(moveBodyEl, DATA.notations, currentIndex - 1, function(idx){ stopPlay(); currentIndex = idx + 1; render(); });
+  var moveCellEls = buildMoveRowsInto(moveBodyEl, DATA.notations, currentIndex - 1, function(idx){ stopPlay(); currentIndex = idx + 1; render(); });
+  scrollMoveListToCurrent(moveCellEls);
   counterEl.textContent = currentIndex + " / " + (DATA.snapshots.length - 1) + " 手";
   updateButtons();
 }
 function applyMochiOffset(el, offset){ if (!offset) return; el.style.position = "relative"; el.style.transform = "translate(" + ((offset.dx || 0) * 38) + "px," + ((offset.dy || 0) * 38) + "px)"; }
+function scrollMoveListToCurrent(moveCellEls){
+  if (!movelistScrollEl) return;
+  if (currentIndex <= 0 || !moveCellEls || !moveCellEls[currentIndex - 1]) { movelistScrollEl.scrollTop = 0; return; }
+  var hlCell = moveCellEls[currentIndex - 1];
+  var contRect = movelistScrollEl.getBoundingClientRect();
+  var cellRect = hlCell.getBoundingClientRect();
+  movelistScrollEl.scrollTop += (cellRect.top - contRect.top);
+}
 function updateButtons(){
   var last = DATA.snapshots.length - 1;
   aEl("first").disabled = currentIndex === 0;
