@@ -20,9 +20,9 @@
 <body style="margin:0;padding:0;background:#fff;">
 <div id="app" style="font-family:'Hiragino Sans','Yu Gothic',sans-serif;color:#2b2118;padding:16px;container-type:inline-size;">
 <div id="controls" style="margin-bottom:10px;font-size:13px;text-align:center;display:none;">
-<button data-a="first" title="最初へ" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">|&lt;</button> 
-<button data-a="prev" title="1手戻る" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">&lt;</button> 
-<button data-a="next" title="1手進む" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">&gt;</button> 
+<button data-a="first" title="最初へ" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;margin-right:8px;">|&lt;</button> 
+<button data-a="prev" title="1手戻る" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;margin-right:8px;">&lt;</button> 
+<button data-a="next" title="1手進む" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;margin-right:8px;">&gt;</button> 
 <button data-a="last" title="最後へ" style="background:#fff;border:1px solid #d8cdb8;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;">&gt;|</button> 
 <br data-r="mobileBreak" style="display:none;">
 <span data-r="counter" style="font-size:13px;min-width:80px;text-align:center;margin-right:1.5em;"></span> 
@@ -39,11 +39,11 @@
 <div data-r="mochiSente"></div>
 </td>
 <td data-r="movelistWrap" valign="top" style="vertical-align:top;padding:0 0 0 8px;width:150px;display:none;">
-<div data-r="movelistScroll" style="height:560px;overflow-y:auto;border:1px solid #d8cdb8;border-radius:4px;">
+<div data-r="movelistScroll" style="height:600px;overflow-y:auto;border:1px solid #d8cdb8;border-radius:4px;">
 <table style="width:100%;border-collapse:collapse;font-size:12px;">
 <thead><tr>
-<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center !important;width:28px;"></th>
-<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center !important;">指し手</th>
+<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:left;text-indent:-3em;width:28px;"></th>
+<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:left;text-indent:-3em;">指し手</th>
 </tr></thead>
 <tbody data-r="moveBody"></tbody>
 </table>
@@ -150,15 +150,17 @@ function paintBoardInto(cellEls, boardMap){
 function highlightCell(cellEls, key){ if (cellEls[key]) cellEls[key].style.background = "#ff9800"; }
 function renderMochiRowInto(container, hand, name, fallback, flip){
   container.innerHTML = "";
-  container.setAttribute("style", "text-align:center;box-sizing:border-box;padding:" + (flip ? "0 0 6px 0" : "6px 0 0 0") + ";");
+  container.setAttribute("style", "box-sizing:border-box;padding:" + (flip ? "0 0 6px 0" : "6px 0 0 0") + ";");
   var inner = document.createElement("div");
-  var css = "display:inline-flex;align-items:center;font-weight:bold;font-size:16px;white-space:nowrap;";
+  var css = "display:grid;grid-template-columns:1fr auto 1fr;align-items:center;font-weight:bold;font-size:16px;white-space:nowrap;";
   if (flip) css += "transform:rotate(180deg);";
   inner.setAttribute("style", css);
+  inner.appendChild(document.createElement("div"));
   var nameSpan = document.createElement("span");
   nameSpan.textContent = name || fallback;
-  nameSpan.style.marginRight = "6px";
   inner.appendChild(nameSpan);
+  var piecesRow = document.createElement("div");
+  piecesRow.setAttribute("style", "display:flex;align-items:center;margin-left:6px;");
   var mw = KOMA_W - 6, mh = KOMA_H - 6;
   HAND_ORDER.forEach(function(type){
     var n = hand[type] || 0;
@@ -168,9 +170,10 @@ function renderMochiRowInto(container, hand, name, fallback, flip){
       km.wrap.style.verticalAlign = "middle";
       km.wrap.style.margin = "0 2px";
       fillKomaContent(km.inner, type, false, false);
-      inner.appendChild(km.wrap);
+      piecesRow.appendChild(km.wrap);
     }
   });
+  inner.appendChild(piecesRow);
   container.appendChild(inner);
 }
 function buildMoveRowsInto(tbody, notations, currentIdx, onClick){
