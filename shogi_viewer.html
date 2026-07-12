@@ -9,7 +9,7 @@
   #layout-table[id] { display:block; width:100%; }
   [data-kse-row] { display:block; width:100%; }
   [data-r="boardCol"] { display:block; width:100%; text-align:center; }
-  [data-r="movelistWrap"] { display:block !important; width:100% !important; box-sizing:border-box; padding:10px 0 0 0 !important; }
+  body:not(.kse-no-moves) [data-r="movelistWrap"] { display:block !important; width:100% !important; box-sizing:border-box; padding:10px 0 0 0 !important; }
   [data-r="movelistWrap"] > div { height:235px !important; }
   #controls [data-r="mobileBreak"] { display:block !important; height:14px !important; }
   #controls button, #controls select { font-size:16px !important; padding:9px 14px !important; }
@@ -42,8 +42,8 @@
 <div data-r="movelistScroll" style="height:390px;overflow-y:auto;border:1px solid #d8cdb8;border-radius:4px;">
 <table style="width:100%;border-collapse:collapse;font-size:12px;">
 <thead><tr>
-<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;width:28px;"></th>
-<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center;">指し手</th>
+<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center !important;width:28px;"></th>
+<th style="background:#faf6ee;border-bottom:1px solid #d8cdb8;padding:3px 5px;font-size:11px;color:#5a4a34;text-align:center !important;">指し手</th>
 </tr></thead>
 <tbody data-r="moveBody"></tbody>
 </table>
@@ -318,6 +318,7 @@ function showPayload(payload){
   currentIndex = 0;
   document.getElementById("controls").style.display = DATA.hasMoves ? "" : "none";
   rEl("movelistWrap").style.display = DATA.hasMoves ? "" : "none";
+  document.body.classList.toggle("kse-no-moves", !DATA.hasMoves);
   render();
 }
 function boot(){
