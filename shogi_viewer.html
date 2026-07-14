@@ -294,38 +294,62 @@ function updateButtons(){
 }
 function stopPlay(){ if (playTimer) { clearInterval(playTimer); playTimer = null; updateButtons(); } }
 var _komaAudioCtx = null;
-function playKomaSound(){
+var _komaKeepAliveStarted = false;
+function ensureKomaAudioCtx(){
   try {
     var Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
+    if (!Ctx) return null;
     if (!_komaAudioCtx) _komaAudioCtx = new Ctx();
-    var ctx = _komaAudioCtx;
-    if (ctx.state === "suspended") ctx.resume();
+    if (_komaAudioCtx.state === "suspended") _komaAudioCtx.resume();
+    if (!_komaKeepAliveStarted) {
+      _komaKeepAliveStarted = true;
+      try {
+        var keepOsc = _komaAudioCtx.createOscillator();
+        var keepGain = _komaAudioCtx.createGain();
+        keepGain.gain.value = 0.00001;
+        keepOsc.frequency.value = 20;
+        keepOsc.connect(keepGain);
+        keepGain.connect(_komaAudioCtx.destination);
+        keepOsc.start();
+      } catch (e2) {}
+    }
+    return _komaAudioCtx;
+  } catch (e) { return null; }
+}
+document.addEventListener("pointerdown", ensureKomaAudioCtx, { once: true });
+document.addEventListener("keydown", ensureKomaAudioCtx, { once: true });
+function playKomaSound(){
+  try {
+    var ctx = ensureKomaAudioCtx();
+    if (!ctx) return;
     var now = ctx.currentTime;
-    var dur = 0.06;
+    var dur = 0.035;
     var buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
     var data = buffer.getChannelData(0);
-    for (var i = 0; i < data.length; i++) { data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 2); }
+    for (var i = 0; i < data.length; i++) { data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 3); }
     var noise = ctx.createBufferSource();
     noise.buffer = buffer;
+    var highpass = ctx.createBiquadFilter();
+    highpass.type = "highpass";
+    highpass.frequency.value = 2500;
     var bandpass = ctx.createBiquadFilter();
     bandpass.type = "bandpass";
-    bandpass.frequency.value = 2200;
-    bandpass.Q.value = 1.0;
+    bandpass.frequency.value = 5500;
+    bandpass.Q.value = 3.0;
     var noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.7, now);
+    noiseGain.gain.setValueAtTime(1.0, now);
     noiseGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
-    noise.connect(bandpass); bandpass.connect(noiseGain); noiseGain.connect(ctx.destination);
+    noise.connect(highpass); highpass.connect(bandpass); bandpass.connect(noiseGain); noiseGain.connect(ctx.destination);
     noise.start(now); noise.stop(now + dur);
     var osc = ctx.createOscillator();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(180, now);
-    osc.frequency.exponentialRampToValueAtTime(90, now + 0.04);
+    osc.type = "square";
+    osc.frequency.setValueAtTime(2000, now);
+    osc.frequency.exponentialRampToValueAtTime(900, now + 0.015);
     var oscGain = ctx.createGain();
-    oscGain.gain.setValueAtTime(0.5, now);
-    oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    oscGain.gain.setValueAtTime(0.18, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.018);
     osc.connect(oscGain); oscGain.connect(ctx.destination);
-    osc.start(now); osc.stop(now + 0.05);
+    osc.start(now); osc.stop(now + 0.018);
   } catch (e) {}
 }
 function startPlay(){
