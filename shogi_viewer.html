@@ -293,6 +293,41 @@ function updateButtons(){
   if (playTimer) { playBtn.textContent = "■ 停止"; } else { playBtn.textContent = "▶ 再生"; }
 }
 function stopPlay(){ if (playTimer) { clearInterval(playTimer); playTimer = null; updateButtons(); } }
+var _komaAudioCtx = null;
+function playKomaSound(){
+  try {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!_komaAudioCtx) _komaAudioCtx = new Ctx();
+    var ctx = _komaAudioCtx;
+    if (ctx.state === "suspended") ctx.resume();
+    var now = ctx.currentTime;
+    var dur = 0.06;
+    var buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+    var data = buffer.getChannelData(0);
+    for (var i = 0; i < data.length; i++) { data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 2); }
+    var noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    var bandpass = ctx.createBiquadFilter();
+    bandpass.type = "bandpass";
+    bandpass.frequency.value = 2200;
+    bandpass.Q.value = 1.0;
+    var noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.7, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    noise.connect(bandpass); bandpass.connect(noiseGain); noiseGain.connect(ctx.destination);
+    noise.start(now); noise.stop(now + dur);
+    var osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(180, now);
+    osc.frequency.exponentialRampToValueAtTime(90, now + 0.04);
+    var oscGain = ctx.createGain();
+    oscGain.gain.setValueAtTime(0.5, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    osc.connect(oscGain); oscGain.connect(ctx.destination);
+    osc.start(now); osc.stop(now + 0.05);
+  } catch (e) {}
+}
 function startPlay(){
   if (playTimer) return;
   var last = DATA.snapshots.length - 1;
@@ -301,13 +336,13 @@ function startPlay(){
   playTimer = setInterval(function(){
     var last2 = DATA.snapshots.length - 1;
     if (currentIndex >= last2) { stopPlay(); return; }
-    currentIndex++; render();
+    currentIndex++; playKomaSound(); render();
   }, speed);
   updateButtons();
 }
 aEl("first").addEventListener("click", function(){ stopPlay(); currentIndex = 0; render(); });
 aEl("prev").addEventListener("click", function(){ stopPlay(); if (currentIndex > 0) currentIndex--; render(); });
-aEl("next").addEventListener("click", function(){ stopPlay(); var last = DATA.snapshots.length - 1; if (currentIndex < last) currentIndex++; render(); });
+aEl("next").addEventListener("click", function(){ stopPlay(); var last = DATA.snapshots.length - 1; if (currentIndex < last) { currentIndex++; playKomaSound(); } render(); });
 aEl("last").addEventListener("click", function(){ stopPlay(); currentIndex = DATA.snapshots.length - 1; render(); });
 aEl("play").addEventListener("click", function(){ if (playTimer) stopPlay(); else startPlay(); });
 var emptyMsg = document.getElementById("empty-msg");
