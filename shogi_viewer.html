@@ -200,7 +200,7 @@ function cloneHands(h){ return { b: cloneMap(h.b), w: cloneMap(h.w) }; }
 function formatConsiderationTime(raw){
   if (!raw) return "";
   var minutes, idx = raw.indexOf(":");
-  if (idx >= 0) { minutes = parseInt(raw.slice(0, idx), 10) || 0; } else { minutes = 0; }
+  if (idx >= 0) { minutes = parseInt(raw.slice(0, idx), 10) || 0; } else { minutes = Math.floor((parseInt(raw, 10) || 0) / 60); }
   if (minutes < 1) return "";
   return String(minutes);
 }
@@ -352,18 +352,25 @@ function playKomaSound(){
     osc.start(now); osc.stop(now + 0.018);
   } catch (e) {}
 }
+function playTick(){
+  var last2 = DATA.snapshots.length - 1;
+  if (currentIndex >= last2) { stopPlay(); return; }
+  currentIndex++; playKomaSound(); render();
+}
 function startPlay(){
   if (playTimer) return;
   var last = DATA.snapshots.length - 1;
   if (currentIndex >= last) currentIndex = 0;
   var speed = parseInt(speedSelect.value, 10);
-  playTimer = setInterval(function(){
-    var last2 = DATA.snapshots.length - 1;
-    if (currentIndex >= last2) { stopPlay(); return; }
-    currentIndex++; playKomaSound(); render();
-  }, speed);
+  playTimer = setInterval(playTick, speed);
   updateButtons();
 }
+speedSelect.addEventListener("change", function(){
+  if (playTimer) {
+    clearInterval(playTimer);
+    playTimer = setInterval(playTick, parseInt(speedSelect.value, 10));
+  }
+});
 aEl("first").addEventListener("click", function(){ stopPlay(); currentIndex = 0; render(); });
 aEl("prev").addEventListener("click", function(){ stopPlay(); if (currentIndex > 0) currentIndex--; render(); });
 aEl("next").addEventListener("click", function(){ stopPlay(); var last = DATA.snapshots.length - 1; if (currentIndex < last) { currentIndex++; playKomaSound(); } render(); });
