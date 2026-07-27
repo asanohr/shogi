@@ -56,6 +56,7 @@
 <script>
 (function(){
 var KOMA_FONT_FAMILY = "'YujiSyukuKoma','Yu Mincho','Hiragino Mincho ProN',serif";
+var KOMA_FONT_IS_YUJI = true;
 var KANJI = {FU:"歩",KY:"香",KE:"桂",GI:"銀",KI:"金",KA:"角",HI:"飛",OU:"玉",TO:"と",NY:"成香",NK:"成桂",NG:"成銀",UM:"馬",RY:"龍"};
 var PROMOTED_TYPES = {TO:1,NY:1,NK:1,NG:1,UM:1,RY:1};
 var STACKED_TYPES = {NY:1,NK:1,NG:1};
@@ -73,7 +74,8 @@ function buildKomaShape(w, h){
   var border = document.createElement("div");
   border.setAttribute("style", "position:absolute;inset:0;background:#8a5a2b;clip-path:" + KOMA_CLIP + ";");
   var inner = document.createElement("div");
-  inner.setAttribute("style", "position:absolute;inset:1.5px;background:#f3ddaa;clip-path:" + KOMA_CLIP + ";box-sizing:border-box;padding-top:4px;display:flex;align-items:center;justify-content:center;");
+  var innerPadTop = (typeof KOMA_FONT_IS_YUJI !== "undefined" && KOMA_FONT_IS_YUJI) ? 1 : 4;
+  inner.setAttribute("style", "position:absolute;inset:1.5px;background:#f3ddaa;clip-path:" + KOMA_CLIP + ";box-sizing:border-box;padding-top:" + innerPadTop + "px;display:flex;align-items:center;justify-content:center;");
   wrap.appendChild(border);
   wrap.appendChild(inner);
   return { wrap: wrap, inner: inner };
