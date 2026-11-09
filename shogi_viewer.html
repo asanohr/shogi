@@ -155,7 +155,7 @@ function paintBoardInto(cellEls, boardMap){
   }
 }
 function highlightCell(cellEls, key){ if (cellEls[key]) cellEls[key].style.background = "#ff9800"; }
-function renderMochiRowInto(container, hand, name, fallback, flip){
+function renderMochiRowInto(container, hand, name, flip){
   container.innerHTML = "";
   container.setAttribute("style", "box-sizing:border-box;padding:" + (flip ? "0 0 6px 0" : "6px 0 0 0") + ";");
   var inner = document.createElement("div");
@@ -164,7 +164,7 @@ function renderMochiRowInto(container, hand, name, fallback, flip){
   inner.setAttribute("style", css);
   inner.appendChild(document.createElement("div"));
   var nameSpan = document.createElement("span");
-  nameSpan.textContent = name || fallback;
+  nameSpan.textContent = name || "";
   inner.appendChild(nameSpan);
   var piecesRow = document.createElement("div");
   piecesRow.setAttribute("style", "display:flex;align-items:center;margin-left:6px;");
@@ -270,8 +270,8 @@ function render(){
   var snap = DATA.snapshots[currentIndex];
   paintBoardInto(cellEls, snap.board);
   if (currentIndex > 0 && DATA.tos && DATA.tos[currentIndex - 1]) { var lastTo = DATA.tos[currentIndex - 1]; highlightCell(cellEls, lastTo.file + "," + lastTo.rank); }
-  renderMochiRowInto(mochiGoteEl, snap.hands.w, DATA.names && DATA.names.w, "後手", true);
-  renderMochiRowInto(mochiSenteEl, snap.hands.b, DATA.names && DATA.names.b, "先手", false);
+  renderMochiRowInto(mochiGoteEl, snap.hands.w, DATA.names && DATA.names.w, true);
+  renderMochiRowInto(mochiSenteEl, snap.hands.b, DATA.names && DATA.names.b, false);
   applyMochiOffset(mochiGoteEl, DATA.mochiPos && DATA.mochiPos.w);
   applyMochiOffset(mochiSenteEl, DATA.mochiPos && DATA.mochiPos.b);
   var moveCellEls = buildMoveRowsInto(moveBodyEl, DATA.notations, currentIndex - 1, function(idx){ stopPlay(); currentIndex = idx + 1; render(); });
