@@ -67,6 +67,7 @@ var KAN = "一二三四五六七八九";
 var CELL_CSS = "border:1px solid #6b4d24;text-align:center;vertical-align:middle;font-size:22px;user-select:none;box-sizing:border-box;width:38px;height:38px;background:#dcb35c;padding:0;";
 var LABEL_CSS = "text-align:center;vertical-align:middle;font-size:14px;color:#5a4a34;box-sizing:border-box;padding:0;border:none;background:#dcb35c;";
 var KOMA_W = 30, KOMA_H = 34;
+var BOARD_KOMA_FONT_PX = 20;
 var KOMA_CLIP = "polygon(50% 0%,96% 22%,100% 100%,0% 100%,4% 22%)";
 function kanjiNum(n){ if (n<=0) return ""; if (n<=9) return KAN[n-1]; if (n<20) return n===10 ? "十" : ("十" + KAN[n-11]); return String(n); }
 function buildKomaShape(w, h){
@@ -81,7 +82,7 @@ function buildKomaShape(w, h){
   wrap.appendChild(inner);
   return { wrap: wrap, inner: inner };
 }
-function fillKomaContent(inner, type, emphasis, promoted){
+function fillKomaContent(inner, type, emphasis, promoted, basePx){
   var color = promoted ? "#a33b2e" : "#1a1208";
   var strokeCss = (typeof KOMA_FONT_STROKE_ENABLED !== "undefined" && KOMA_FONT_STROKE_ENABLED) ? ("-webkit-text-stroke:0.4px " + color + ";") : "";
   var textCss = "font-weight:900;line-height:1;color:" + color + ";" + strokeCss + (emphasis ? "font-family:'Hiragino Sans','Yu Gothic','Meiryo',sans-serif;" : "font-family:" + KOMA_FONT_FAMILY + ";");
@@ -94,14 +95,14 @@ function fillKomaContent(inner, type, emphasis, promoted){
     inner.appendChild(col);
   } else {
     var span = document.createElement("span");
-    span.setAttribute("style", textCss + "font-size:" + (emphasis ? "22px" : "19px") + ";");
+    span.setAttribute("style", textCss + "font-size:" + (emphasis ? "22px" : ((basePx || 19) + "px")) + ";");
     span.textContent = label;
     inner.appendChild(span);
   }
 }
 function buildBoardSkeleton(boardAreaEl, crop){
   crop = crop || { x: 0, y: 0, w: 1, h: 1 };
-  var CELL = 38, LABEL_TOP = 13, LABEL_RIGHT = 16;
+  var CELL = 38, LABEL_TOP = 18, LABEL_RIGHT = 20;
   var fullW = CELL * 9 + LABEL_RIGHT, fullH = LABEL_TOP + CELL * 9;
   var viewW = crop.w * fullW, viewH = crop.h * fullH;
   var offX = crop.x * fullW, offY = crop.y * fullH;
@@ -150,7 +151,7 @@ function paintBoardInto(cellEls, boardMap){
     var km = buildKomaShape(KOMA_W, KOMA_H);
     km.wrap.style.margin = "0 auto";
     if (p.owner === "w") km.wrap.style.transform = "rotate(180deg)";
-    fillKomaContent(km.inner, p.type, p.emphasis, !!PROMOTED_TYPES[p.type]);
+    fillKomaContent(km.inner, p.type, p.emphasis, !!PROMOTED_TYPES[p.type], BOARD_KOMA_FONT_PX);
     cell.appendChild(km.wrap);
   }
 }
@@ -288,6 +289,23 @@ function scrollMoveListToCurrent(moveCellEls){
   var cellRect = hlCell.getBoundingClientRect();
   movelistScrollEl.scrollTop += (cellRect.top - contRect.top);
 }
+var MOVELIST_MAX_H = 1200;
+var __naturalListH = 0;
+function naturalMovelistHeight(){
+  var h = 0;
+  [mochiGoteEl, boardAreaEl, mochiSenteEl].forEach(function(el){ if (el) h += el.offsetHeight; });
+  return Math.max(240, h - 2);
+}
+function fitMovelistHeight(){
+  if (!movelistScrollEl || !movelistScrollEl.offsetParent) return;
+  var nat = naturalMovelistHeight();
+  __naturalListH = nat;
+  var top = movelistScrollEl.getBoundingClientRect().top;
+  var avail = window.innerHeight - top - 20;
+  var h = Math.round(Math.max(nat, Math.min(avail, MOVELIST_MAX_H)));
+  if (Math.abs(parseFloat(movelistScrollEl.style.height) - h) < 2) return;
+  movelistScrollEl.style.height = h + "px";
+}
 function updateButtons(){
   var last = DATA.snapshots.length - 1;
   aEl("first").disabled = currentIndex === 0;
@@ -396,6 +414,7 @@ function showPayload(payload){
   rEl("movelistWrap").style.display = DATA.hasMoves ? "" : "none";
   document.body.classList.toggle("kse-no-moves", !DATA.hasMoves);
   render();
+  fitMovelistHeight();
 }
 function boot(){
   stopPlay();
@@ -416,7 +435,16 @@ function boot(){
 window.addEventListener("hashchange", boot);
 boot();
 var __appEl = document.getElementById("app");
-function __reportHeight(){ try { window.parent.postMessage({ type: "shogiKifuHeight", height: __appEl.scrollHeight }, "*"); } catch (e) {} }
+function __reportHeight(){
+  try {
+    var extra = 0;
+    if (movelistScrollEl && movelistScrollEl.offsetParent) {
+      extra = Math.max(0, movelistScrollEl.getBoundingClientRect().height - __naturalListH);
+    }
+    window.parent.postMessage({ type: "shogiKifuHeight", height: Math.ceil(__appEl.scrollHeight - extra) }, "*");
+  } catch (e) {}
+}
+window.addEventListener("resize", function(){ fitMovelistHeight(); __reportHeight(); });
 if (window.ResizeObserver) { new ResizeObserver(__reportHeight).observe(__appEl); } else { window.addEventListener("resize", __reportHeight); setInterval(__reportHeight, 500); }
 })();
 </script>
