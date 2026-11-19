@@ -258,6 +258,7 @@ function q(sel){ return document.querySelector(sel); }
 function rEl(name){ return q('[data-r="' + name + '"]'); }
 function aEl(name){ return q('[data-a="' + name + '"]'); }
 var boardAreaEl = rEl("boardArea");
+var boardColEl = rEl("boardCol");
 var mochiGoteEl = rEl("mochiGote");
 var mochiSenteEl = rEl("mochiSente");
 var counterEl = rEl("counter");
@@ -276,22 +277,30 @@ function render(){
   renderMochiRowInto(mochiSenteEl, snap.hands.b, DATA.names && DATA.names.b, false);
   applyMochiOffset(mochiGoteEl, DATA.mochiPos && DATA.mochiPos.w);
   applyMochiOffset(mochiSenteEl, DATA.mochiPos && DATA.mochiPos.b);
-  var moveRowEls = buildMoveRowsInto(moveBodyEl, DATA.notations, currentIndex - 1, function(idx){ stopPlay(); currentIndex = idx + 1; __flashIdx = idx; render(); });
-  scrollMoveListToCurrent(moveRowEls);
+  var moveRowEls = buildMoveRowsInto(moveBodyEl, DATA.notations, currentIndex - 1, function(idx){ stopPlay(); currentIndex = idx + 1; __flashIdx = idx; renderBy("none"); });
+  scrollMoveListToCurrent(moveRowEls, __scrollMode);
+  __scrollMode = "auto";
   if (__flashIdx >= 0) { flashMoveRow(moveRowEls[__flashIdx]); __flashIdx = -1; }
   counterEl.textContent = currentIndex + " / " + (DATA.snapshots.length - 1) + " 手";
   updateButtons();
 }
 function applyMochiOffset(el, offset){ if (!offset) return; el.style.position = "relative"; el.style.transform = "translate(" + ((offset.dx || 0) * 38) + "px," + ((offset.dy || 0) * 38) + "px)"; }
 var SCROLL_TAIL_ROWS = 2;
-function scrollMoveListToCurrent(moveRowEls){
+var __scrollMode = "auto";
+function renderBy(mode){ __scrollMode = mode; render(); }
+function isMobileLayout(){
+  try { return boardColEl && window.getComputedStyle(boardColEl).display === "block"; } catch (e) { return false; }
+}
+function scrollMoveListToCurrent(moveRowEls, mode){
   if (!movelistScrollEl) return;
+  if (mode === "none") return;
   if (currentIndex <= 0 || !moveRowEls || !moveRowEls[currentIndex - 1]) { movelistScrollEl.scrollTop = 0; return; }
   var row = moveRowEls[currentIndex - 1];
   var contRect = movelistScrollEl.getBoundingClientRect();
   var rowRect = row.getBoundingClientRect();
   var top = rowRect.top - contRect.top;
   var bottom = top + rowRect.height;
+  if (mode === "top" && isMobileLayout()) { movelistScrollEl.scrollTop += top; return; }
   if (top < 0) { movelistScrollEl.scrollTop += top; return; }
   var limit = contRect.height - rowRect.height * SCROLL_TAIL_ROWS;
   if (bottom > limit) { movelistScrollEl.scrollTop += (bottom - limit); }
@@ -405,7 +414,7 @@ function playKomaSound(){
 function playTick(){
   var last2 = DATA.snapshots.length - 1;
   if (currentIndex >= last2) { stopPlay(); return; }
-  currentIndex++; playKomaSound(); render();
+  currentIndex++; playKomaSound(); renderBy("top");
 }
 function startPlay(){
   if (playTimer) return;
@@ -421,10 +430,10 @@ speedSelect.addEventListener("change", function(){
     playTimer = setInterval(playTick, parseInt(speedSelect.value, 10));
   }
 });
-aEl("first").addEventListener("click", function(){ stopPlay(); currentIndex = 0; render(); });
-aEl("prev").addEventListener("click", function(){ stopPlay(); if (currentIndex > 0) currentIndex--; render(); });
-aEl("next").addEventListener("click", function(){ stopPlay(); var last = DATA.snapshots.length - 1; if (currentIndex < last) { currentIndex++; playKomaSound(); } render(); });
-aEl("last").addEventListener("click", function(){ stopPlay(); currentIndex = DATA.snapshots.length - 1; render(); });
+aEl("first").addEventListener("click", function(){ stopPlay(); currentIndex = 0; renderBy("top"); });
+aEl("prev").addEventListener("click", function(){ stopPlay(); if (currentIndex > 0) currentIndex--; renderBy("top"); });
+aEl("next").addEventListener("click", function(){ stopPlay(); var last = DATA.snapshots.length - 1; if (currentIndex < last) { currentIndex++; playKomaSound(); } renderBy("top"); });
+aEl("last").addEventListener("click", function(){ stopPlay(); currentIndex = DATA.snapshots.length - 1; renderBy("top"); });
 aEl("play").addEventListener("click", function(){ if (playTimer) stopPlay(); else startPlay(); });
 var emptyMsg = document.getElementById("empty-msg");
 var layoutTable = document.getElementById("layout-table");
